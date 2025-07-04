@@ -14,7 +14,7 @@ import java.util.Arrays;
 public class Snowflake implements IdentifierGenerator {
     private static final Logger logger = LoggerFactory.getLogger(Snowflake.class);
 
-    private static final long epoch = 1704067200000L; // 2024-01-01 00:00:00+00:00
+    private final long epoch;
 
     private static final long workerIdBits = 10L;
     public static final long workerIdMax = ~(-1L << workerIdBits);
@@ -29,12 +29,18 @@ public class Snowflake implements IdentifierGenerator {
     private long sequence = 0;
 
     public Snowflake() throws SocketException, UnknownHostException {
+        this.epoch = 1704067200000L; // 2024-01-01 00:00:00+00:00
         InetAddress localHost = InetAddress.getLocalHost();
         NetworkInterface ni = NetworkInterface.getByInetAddress(localHost);
         byte[] hardwareAddress = ni.getHardwareAddress();
-        workerId = (Arrays.hashCode(hardwareAddress) & 0x7FFFFFFF) % workerIdMax;
+        this.workerId = (Arrays.hashCode(hardwareAddress) & 0x7FFFFFFF) % workerIdMax;
         logger.info("Worker ID: {}", workerId);
-
+        this.lastTimestamp = System.currentTimeMillis();
+    }
+    
+    public Snowflake(long workerId, long epochTimestamp) {
+        this.workerId = workerId;
+        this.epoch = epochTimestamp;
         this.lastTimestamp = System.currentTimeMillis();
     }
 
