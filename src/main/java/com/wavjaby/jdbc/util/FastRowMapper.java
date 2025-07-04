@@ -10,6 +10,7 @@ import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
 import java.sql.ResultSet;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
+import static java.lang.reflect.Modifier.isStatic;
 
 public class FastRowMapper<T> implements RowMapper<T> {
     private static final ConversionService conversionService = ApplicationConversionService.getSharedInstance();
@@ -33,7 +35,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
         resultFieldCount = columnCount;
         staticFieldMap = null;
         staticFieldType = new Class[columnCount];
-        
+
         int index = 0;
         Parameter[] parameters = constructor.getParameters();
         for (Parameter parameter : parameters) {
@@ -81,13 +83,30 @@ public class FastRowMapper<T> implements RowMapper<T> {
 
     @SuppressWarnings("unchecked")
     private static <T> Constructor<T> getConstructor(Class<T> mappedClass) {
-        Constructor<T>[] constructors = (Constructor<T>[]) mappedClass.getConstructors();
-        if (constructors.length != 1)
-            throw new BeanInstantiationException(mappedClass, "Must have exactly one constructor");
+        Map<String, Field> fields = new HashMap<>();
+        extractClassFields(mappedClass, fields);
 
-//        if (constructors[0].getParameters().length != mappedClass.getDeclaredFields().length)
-//            throw new BeanInstantiationException(mappedClass, "Constructor param count not match field count");
-        return constructors[0];
+        Constructor<T>[] constructors = (Constructor<T>[]) mappedClass.getConstructors();
+        for (Constructor<T> constructor : constructors) {
+            if (constructor.getParameterCount() == fields.size())
+                return constructor;
+        }
+        throw new BeanInstantiationException(mappedClass, "No constructor found with " + fields.size() + " param");
+    }
+
+    public static void extractClassFields(Class<?> mappedClass, Map<String, Field> fields) {
+        Class<?> superclass = mappedClass.getSuperclass();
+        if (!superclass.getName().startsWith("java.lang.") &&
+                !superclass.getName().startsWith("java.sql."))
+            extractClassFields(superclass, fields);
+        for (Field field : mappedClass.getDeclaredFields()) {
+            if (isStatic(field.getModifiers()))
+                continue;
+
+            String fieldName = field.getName();
+            if (!fields.containsKey(fieldName))
+                fields.put(fieldName, field);
+        }
     }
 
     @Override
