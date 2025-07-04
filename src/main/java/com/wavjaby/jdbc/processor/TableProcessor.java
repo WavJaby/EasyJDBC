@@ -9,7 +9,10 @@ import com.wavjaby.persistence.UniqueConstraint;
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
-import javax.lang.model.type.*;
+import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.NoType;
+import javax.lang.model.type.PrimitiveType;
+import javax.lang.model.type.TypeKind;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Writer;
@@ -442,33 +445,7 @@ public class TableProcessor extends AbstractProcessor {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
 
             // Check method to create
-            if (method.returnTypeMirror instanceof DeclaredType declaredReturnType) {
-                String typeClassPath = declaredReturnType.asElement().toString();
-                if (method.returnSelfTable) {
-                    // Update function
-                    if (method.modifyRow) {
-                        if (generateRepositoryUpdateMethod(method, tableData, repoMethodBuilder, false, true))
-                            return true;
-                    }
-                    // Insert function
-                    else if (method.insertMethod) {
-                        if (generateRepositoryInsertMethod(method, tableData, repoMethodBuilder))
-                            return true;
-                    }
-                    // Query function
-                    else if (generateRepositorySearchMethod(method, tableData, repoMethodBuilder))
-                        return true;
-                } else if (method.returnColumn != null) {
-                    if (generateRepositorySearchColumnMethod(method, tableData, repoMethodBuilder))
-                        return true;
-                } else if (method.returnColumnSql != null) {
-                    if (generateRepositorySearchColumnSqlMethod(method, tableData, repoMethodBuilder))
-                        return true;
-                } else {
-                    if (generateRepositorySearchMethod(method, tableData, repoMethodBuilder))
-                        return true;
-                }
-            } else if (method.returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
+            if (method.returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
                 if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
                     if (method.delete) {
                         if (generateRepositoryDeleteMethod(method, tableData, repoMethodBuilder, true))
@@ -500,6 +477,31 @@ public class TableProcessor extends AbstractProcessor {
                     console.printMessage(ERROR, "Unsupported method return type: void", method.method);
                     return true;
                 }
+            } else {
+                if (method.returnSelfTable) {
+                    // Update function
+                    if (method.modifyRow) {
+                        if (generateRepositoryUpdateMethod(method, tableData, repoMethodBuilder, false, true))
+                            return true;
+                    }
+                    // Insert function
+                    else if (method.insertMethod) {
+                        if (generateRepositoryInsertMethod(method, tableData, repoMethodBuilder))
+                            return true;
+                    }
+                    // Query function
+                    else if (generateRepositorySearchMethod(method, tableData, repoMethodBuilder))
+                        return true;
+                } else if (method.returnColumn != null) {
+                    if (generateRepositorySearchColumnMethod(method, tableData, repoMethodBuilder))
+                        return true;
+                } else if (method.returnColumnSql != null) {
+                    if (generateRepositorySearchColumnSqlMethod(method, tableData, repoMethodBuilder))
+                        return true;
+                } else {
+                    if (generateRepositorySearchMethod(method, tableData, repoMethodBuilder))
+                        return true;
+                }
             }
         }
         return false;
@@ -509,8 +511,10 @@ public class TableProcessor extends AbstractProcessor {
         StringBuilder queryBuilder = new StringBuilder();
         StringBuilder argsBuilder = new StringBuilder();
 
-        if (argComma && !params.isEmpty()) {
+        if (argComma && !params.isEmpty() || extraQuerySQL != null) {
             if (prefix != null) queryBuilder.append(prefix);
+        }
+        if (argComma && !params.isEmpty()) {
             argsBuilder.append(',');
         }
 
@@ -543,7 +547,7 @@ public class TableProcessor extends AbstractProcessor {
                 // Get field if using data class
                 if (param.dataClass) {
                     argName += '.' + column.field.getSimpleName().toString();
-                    if (column.tableInfo.isRecord) argName += "()";
+                    if (param.isRecord) argName += "()";
                 }
 
                 // Support modify array
@@ -863,8 +867,10 @@ public class TableProcessor extends AbstractProcessor {
                     .append(update[1]).append(") == 1)\n");
 
             // Update query values
-            StringBuilder[] where = getQueryAndArgs(whereColumns, methodInfo.querySQL, false, " where ", " and ", true, tableData);
-            repoMethodBuilder.append("            return jdbc.query(\"select * from ").append(tableInfo.fullname)
+            StringBuilder[] where = getQueryAndArgs(whereColumns, null, false, " where ", " and ", true, tableData);
+            String columns = String.join(",", tableData.tableColumnNames);
+            repoMethodBuilder.append("            return jdbc.query(\"select ").append(columns)
+                    .append(" from ").append(tableInfo.fullname)
                     .append(where[0]).append("\",tableMapper").append(where[1]).append(')')
                     .append(methodInfo.returnList ? ";\n" : ".get(0);\n");
             repoMethodBuilder.append("        return null;\n");

@@ -146,6 +146,25 @@ public class MethodInfo {
                 return false;
             if (primitiveReturnType.getKind() == TypeKind.INT)
                 return false;
+        } else if (returnTypeMirror instanceof ArrayType) {
+            // Only allow when return field is used
+            if (returnField != null) {
+                // Check field exit
+                ColumnInfo column = tableData.tableFields.get(returnField);
+                if (column == null) {
+                    printError(console, method, Select.class, "field",
+                            "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
+                    return true;
+                }
+                String returnTypeStr = returnTypeMirror.toString();
+                if (returnTypeStr.startsWith("java.lang.")) returnTypeStr = returnTypeStr.substring(10);
+                this.returnType = returnTypeStr;
+                this.returnColumn = column;
+                return false;
+            } else {
+                console.printMessage(ERROR, "Return with array type must use returnField, to query multiple objects, use List<>", method);
+                return true;
+            }
         } else if (returnTypeMirror instanceof NoType) {
             this.returnType = "void";
             return false;
@@ -201,7 +220,7 @@ public class MethodInfo {
                 !declaredType.toString().startsWith("java.sql.")) {
             TypeElement typeElement = (TypeElement) declaredType.asElement();
             String classType = declaredType.asElement().getSimpleName().toString();
-            return addClassFieldsColumn(typeElement, classType, parameterName, null, parameter, console);
+            return addClassFieldsColumn(typeElement, classType, parameterName, parameter, console);
         }
 
         String[] fieldNames = fieldName != null
@@ -212,7 +231,7 @@ public class MethodInfo {
         return addParamColumn(parameterType, parameterName, fieldNames, where, parameter, console);
     }
 
-    private boolean addClassFieldsColumn(TypeElement classObj, String classType, String className, Where where, Element parameter, Messager console) {
+    private boolean addClassFieldsColumn(TypeElement classObj, String classType, String className, Element parameter, Messager console) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(classObj, fields);
 
@@ -233,7 +252,7 @@ public class MethodInfo {
 
             columns.add(column);
         }
-        params.add(new MethodParamInfo(parameter, columns, classType, className, true, where));
+        params.add(new MethodParamInfo(parameter, columns, classType, className, true, null));
         return false;
     }
 
