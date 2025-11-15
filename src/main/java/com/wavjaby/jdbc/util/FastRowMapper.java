@@ -2,32 +2,44 @@ package com.wavjaby.jdbc.util;
 
 import org.springframework.beans.BeanInstantiationException;
 import org.springframework.boot.convert.ApplicationConversionService;
-import org.springframework.core.convert.ConversionService;
+import org.springframework.core.convert.ConverterNotFoundException;
+import org.springframework.core.convert.TypeDescriptor;
+import org.springframework.core.convert.converter.GenericConverter;
+import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.JdbcUtils;
 import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.util.ClassUtils;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Parameter;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
+import java.lang.reflect.*;
+import java.lang.reflect.Array;
+import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;
 
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static java.lang.reflect.Modifier.isStatic;
 
+
 public class FastRowMapper<T> implements RowMapper<T> {
-    private static final ConversionService conversionService = ApplicationConversionService.getSharedInstance();
+    private static final GenericConversionService conversionService = (GenericConversionService) ApplicationConversionService.getSharedInstance();
+    private static final Method getConverter;
+
+    static {
+        try {
+            getConverter = GenericConversionService.class.getDeclaredMethod("getConverter", TypeDescriptor.class, TypeDescriptor.class);
+            getConverter.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private final Constructor<T> mappedClassConstructor;
     private final int resultFieldCount;
     private final Integer[] staticFieldMap;
     private final Class<?>[] staticFieldType;
+    private final GenericConverter[] staticFieldConvecter;
 
     public FastRowMapper(Class<T> mappedClass, int columnCount) {
         Constructor<T> constructor = getConstructor(mappedClass);
@@ -35,6 +47,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
         resultFieldCount = columnCount;
         staticFieldMap = null;
         staticFieldType = new Class[columnCount];
+        staticFieldConvecter = new GenericConverter[columnCount];
 
         int index = 0;
         Parameter[] parameters = constructor.getParameters();
@@ -59,6 +72,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
         }
         staticFieldMap = new Integer[collumnMap.size()];
         staticFieldType = new Class[collumnMap.size()];
+        staticFieldConvecter = new GenericConverter[collumnMap.size()];
 
         int dataObjIndex = 0;
         for (Parameter parameter : parameters) {
@@ -131,9 +145,18 @@ public class FastRowMapper<T> implements RowMapper<T> {
             // Convert type
             Object rawVal = JdbcUtils.getResultSetValue(rs, i + 1, targetType);
             if (rawVal != null && needConvert(rawVal.getClass(), targetType)) {
-                if (!conversionService.canConvert(rawVal.getClass(), targetType))
-                    throw new RuntimeException("Cannot convert " + rawVal.getClass() + " to " + targetType);
-                rawVal = conversionService.convert(rawVal, targetType);
+                if (isEnumStringArray(rawVal, targetType))
+                    rawVal = convertEnumStringArray(rawVal, targetType.getComponentType(), i);
+                else {
+                    TypeDescriptor sourceType = TypeDescriptor.valueOf(rawVal.getClass());
+                    TypeDescriptor targetTypeInfo = TypeDescriptor.valueOf(targetType);
+                    // Get cached converter
+                    GenericConverter converter = staticFieldConvecter[i];
+                    if (converter == null)
+                        converter = staticFieldConvecter[i] = getConverter(sourceType, targetTypeInfo);
+
+                    rawVal = converter.convert(rawVal, sourceType, targetTypeInfo);
+                }
             }
 
             values[paramIndex] = rawVal;
@@ -142,6 +165,53 @@ public class FastRowMapper<T> implements RowMapper<T> {
         try {
             return mappedClassConstructor.newInstance(values);
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static GenericConverter getConverter(TypeDescriptor sourceType, TypeDescriptor targetType) {
+        try {
+            GenericConverter converter = (GenericConverter) getConverter.invoke(conversionService, sourceType, targetType);
+            if (converter == null)
+                throw new ConverterNotFoundException(sourceType, targetType);
+            return converter;
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private Object convertEnumStringArray(Object rawArrayVal, Class<?> targetType, int index) {
+        Object[] rawValArray;
+        try {
+            rawValArray = (Object[]) ((java.sql.Array) rawArrayVal).getArray();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        if (rawValArray.length == 0)
+            return Array.newInstance(targetType, 0);
+        
+        // Create enum array
+        Object enumArray = Array.newInstance(targetType, rawValArray.length);
+        TypeDescriptor sourceType = TypeDescriptor.valueOf(String.class);
+        TypeDescriptor targetTypeInfo = TypeDescriptor.valueOf(targetType);
+        GenericConverter converter = staticFieldConvecter[index];
+        if (converter == null)
+            converter = staticFieldConvecter[index] = getConverter(sourceType, targetTypeInfo);
+
+        for (int i = 0; i < rawValArray.length; i++) {
+            Object converted = converter.convert(rawValArray[i], sourceType, targetTypeInfo);
+            Array.set(enumArray, i, converted);
+        }
+        return enumArray;
+    }
+
+    private static boolean isEnumStringArray(Object sourceType, Class<?> targetType) {
+        try {
+            return targetType.isArray() &&
+                    targetType.getComponentType().isEnum() &&
+                    ClassUtils.isAssignable(java.sql.Array.class, sourceType.getClass()) &&
+                    ((java.sql.Array) sourceType).getBaseType() == Types.VARCHAR;
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
