@@ -1,5 +1,6 @@
 plugins {
     id("java")
+    id("java-library")
     id("maven-publish")
 }
 
@@ -20,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly(platform("org.springframework.boot:spring-boot-dependencies:3.5.3"))
+    compileOnly(platform("org.springframework.boot:spring-boot-dependencies:3.5.7"))
     compileOnly("org.springframework.boot:spring-boot-starter-data-jdbc")
     
     compileOnly("com.google.code.findbugs:jsr305:3.0.2")
@@ -35,3 +36,17 @@ tasks.jar {
     }
 }
 
+publishing {
+    publications {
+        create<MavenPublication>("EasyJDBC") {
+            from(components["java"])
+        }
+    }
+
+    repositories {
+        maven {
+            name = "EasyJDBC"
+            url = uri(layout.buildDirectory.dir("repo"))
+        }
+    }
+}
