@@ -4,7 +4,7 @@ A high-performance, annotation-based JDBC framework for Java that generates repo
 EasyJDBC provides a lightweight alternative to JPA with significantly better performance while maintaining familiar
 annotation-driven development.
 
-## 🚀 Features
+## Features
 
 - **High Performance**: Significantly faster than JPA for both insert and query operations
 - **Compile-time Code Generation**: Repository implementations generated during compilation
@@ -21,7 +21,7 @@ annotation-driven development.
     - Unique constraints and indexes
     - Virtual tables and inheritance
 
-## 📊 Performance
+## Performance
 
 Based on comprehensive performance tests comparing EasyJDBC with JPA:
 
@@ -53,7 +53,7 @@ Run the performance tests yourself:
 *Performance results may vary based on database configuration, hardware, and data complexity. Tests are conducted using
 H2 in-memory database.*
 
-## 🏗️ Architecture
+## Architecture
 
 EasyJDBC uses annotation processing to generate repository implementations at compile time:
 
@@ -62,7 +62,7 @@ EasyJDBC uses annotation processing to generate repository implementations at co
 3. **Code Generation**: Annotation processor generates implementations
 4. **Runtime**: Generated repositories use optimized JDBC operations
 
-## 📦 Installation
+## Installation
 
 ### Gradle Configuration
 
@@ -80,7 +80,7 @@ dependencies {
 }
 ```
 
-## 🔧 Quick Start
+## Quick Start
 
 ### 1. Define Your Entity
 
@@ -197,7 +197,7 @@ public class UserService {
 }
 ```
 
-## 🔗 Relationships
+## Relationships
 
 ### Many-to-One Relationship
 
@@ -223,7 +223,7 @@ public record Device(
 ) {}
 ```
 
-## 📝 Available Annotations
+## Available Annotations
 
 ### Entity Annotations
 
@@ -258,7 +258,7 @@ public record Device(
 - `@GenericGenerator` - Custom ID generation
 - `@FieldName` - Custom field naming
 
-## 🛠️ Advanced Features
+## Advanced Features
 
 ### Custom WHERE Clause Conditions
 
@@ -310,7 +310,7 @@ public record DeviceSummary(
 }
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Database Configuration
 
@@ -332,7 +332,7 @@ spring:
 **Note**: This library has only been tested with the H2 database. While it may work with other JDBC-compatible
 databases, H2 is the only officially supported and tested database at this time.
 
-## 🧪 Testing
+## Testing
 
 EasyJDBC includes comprehensive performance tests. Run them with:
 
@@ -340,7 +340,7 @@ EasyJDBC includes comprehensive performance tests. Run them with:
 ./gradlew test --tests "*PerformanceTest*"
 ```
 
-## 📋 Requirements
+## Requirements
 
 - **Java**: 17 or higher
 - **Spring Boot**: 3.0 or higher
@@ -351,17 +351,17 @@ EasyJDBC includes comprehensive performance tests. Run them with:
 While EasyJDBC may work with other JDBC-compatible databases, it has only been thoroughly tested with H2 database.
 Support for other databases is not guaranteed.
 
-## 🆚 EasyJDBC vs JPA
+## EasyJDBC vs JPA
 
-| Feature              | EasyJDBC           | JPA         |
-|----------------------|--------------------|-------------|
-| Performance          | ⚡ High             | 🐌 Moderate |
-| Compile-time Safety  | ✅ Full             | ⚠️ Limited  |
-| Learning Curve       | 📈 Easy (JPA-like) | 📈 Moderate |
-| Runtime Overhead     | 🪶 Minimal         | 🏋️ Heavy   |
-| Code Generation      | ✅ Compile-time     | ❌ Runtime   |
-| Custom WHERE Clauses | ✅ Easy             | ⚠️ Complex  |
-| Relationship Mapping | ⚠️ Limited         | ✅ Full      |
-| Caching              | 🔧 Manual          | ✅ Built-in  |
+| Feature              | EasyJDBC        | JPA        |
+|----------------------|-----------------|------------|
+| Performance          | High            | Moderate   |
+| Compile-time Safety  | Full            | Limited    |
+| Learning Curve       | Easy (JPA-like) | Moderate   |
+| Runtime Overhead     | Minimal         | Heavy      |
+| Code Generation      | Compile-time    | Runtime    |
+| Custom WHERE Clauses | Easy            | Complex    |
+| Relationship Mapping | Limited         | Full       |
+| Caching              | Manual          | Built-in   |
 
-**EasyJDBC** - High-performance JDBC made easy! 🚀
+**EasyJDBC** - High-performance JDBC made easy!
