@@ -30,11 +30,26 @@ public class Snowflake implements IdentifierGenerator {
 
     public Snowflake() throws SocketException, UnknownHostException {
         this.epoch = 1704067200000L; // 2024-01-01 00:00:00+00:00
-        InetAddress localHost = InetAddress.getLocalHost();
-        NetworkInterface ni = NetworkInterface.getByInetAddress(localHost);
-        byte[] hardwareAddress = ni.getHardwareAddress();
-        this.workerId = (Arrays.hashCode(hardwareAddress) & 0x7FFFFFFF) % workerIdMax;
-        logger.info("Worker ID: {}", workerId);
+
+        long generatedWorkerId;
+        try {
+            InetAddress localHost = InetAddress.getLocalHost();
+            NetworkInterface ni = NetworkInterface.getByInetAddress(localHost);
+            byte[] hardwareAddress;
+
+            if (ni != null && (hardwareAddress = ni.getHardwareAddress()) != null) {
+                generatedWorkerId = (Arrays.hashCode(hardwareAddress) & 0x7FFFFFFF) % workerIdMax;
+                logger.info("Worker ID generated from MAC address: {}", generatedWorkerId);
+            } else {
+                generatedWorkerId = generateFallbackWorkerId(localHost);
+                logger.warn("Network interface not available, using fallback Worker ID: {}", generatedWorkerId);
+            }
+        } catch (Exception e) {
+            generatedWorkerId = generateRandomWorkerId();
+            logger.warn("Failed to determine network interface, using random Worker ID: {}", generatedWorkerId, e);
+        }
+
+        this.workerId = generatedWorkerId;
         this.lastTimestamp = System.currentTimeMillis();
     }
     
@@ -67,6 +82,20 @@ public class Snowflake implements IdentifierGenerator {
         return ((timestamp - epoch) << timestampLeftShift) |
                (workerId << workerIdShift) |
                sequence;
+    }
+
+    private long generateFallbackWorkerId(InetAddress localHost) {
+        // Use hostname and IP address as fallback
+        String hostInfo = localHost.getHostName() + localHost.getHostAddress();
+        return (Math.abs(hostInfo.hashCode()) & 0x7FFFFFFF) % workerIdMax;
+    }
+
+    private long generateRandomWorkerId() {
+        // Last resort: use system properties and current time for pseudo-randomness
+        String systemInfo = System.getProperty("user.name", "") + 
+                           System.getProperty("java.version", "") + 
+                           System.currentTimeMillis();
+        return (Math.abs(systemInfo.hashCode()) & 0x7FFFFFFF) % workerIdMax;
     }
 
     @SuppressWarnings("ALL")
