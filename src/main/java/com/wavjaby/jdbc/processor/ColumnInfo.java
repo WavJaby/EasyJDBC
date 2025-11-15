@@ -99,8 +99,8 @@ public class ColumnInfo {
                 isUniqueKey = true;
         }
         if (this.joinColumn != null) {
-            if (joinColumn.nullable())
-                nullable = true;
+            if (!joinColumn.nullable())
+                nullable = false;
             if (joinColumn.unique())
                 isUniqueKey = true;
         }

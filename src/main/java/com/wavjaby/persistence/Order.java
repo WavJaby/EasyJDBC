@@ -9,8 +9,12 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.SOURCE)
-public @interface OrderBy {
-    String field();
+public @interface Order {
+    ByField[] value();
+    
+    @interface ByField {
+        String value();
 
-    Direction direction() default Direction.ASC;
+        Direction direction() default Direction.ASC;
+    }
 }

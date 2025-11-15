@@ -1,7 +1,6 @@
 package com.wavjaby.jdbc.processor;
 
 import com.wavjaby.persistence.*;
-import com.wavjaby.persistence.conf.Direction;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
@@ -26,14 +25,14 @@ public class MethodInfo {
     public final boolean delete;
     public final boolean count;
     // Order by
-    public final Direction orderBy;
-    public final String orderByField;
+    public final Order.ByField[] orderBy;
+    public ColumnInfo[] orderByColumns;
     // Limit
     public final Integer limit;
     // Extra query settings
     public final QuerySQL querySQL;
     // Select return type
-    public final String returnField;
+    private final String returnField;
     public final String returnColumnSql;
     public boolean returnSelfTable;
     public boolean returnList;
@@ -52,9 +51,8 @@ public class MethodInfo {
         this.delete = method.getAnnotation(Delete.class) != null;
         this.count = method.getAnnotation(Count.class) != null;
 
-        OrderBy orderBy = method.getAnnotation(OrderBy.class);
-        this.orderBy = orderBy == null ? null : orderBy.direction();
-        this.orderByField = orderBy == null ? null : orderBy.field();
+        Order order = method.getAnnotation(Order.class);
+        this.orderBy = order == null ? null : order.value();
 
         Limit limit = method.getAnnotation(Limit.class);
         this.limit = limit == null ? null : limit.value();
@@ -70,16 +68,21 @@ public class MethodInfo {
     public boolean parseMethod(Messager console) {
         if (parseParamsToColumns(console)) return true;
         // Check modifier
-        if (orderByField != null) {
-            if (orderByField.isBlank()) {
-                printError(console, method, OrderBy.class, "field",
-                        "Field name can not be blank");
-                return true;
-            }
-            if (!tableData.tableFields.containsKey(orderByField)) {
-                printError(console, method, OrderBy.class, "field",
-                        "Field name '" + orderByField + "' not exist in table " + tableData.tableInfo.classPath);
-                return true;
+        if (orderBy != null) {
+            orderByColumns = new ColumnInfo[orderBy.length];
+            for (int i = 0; i < orderBy.length; i++) {
+                String fieldName = orderBy[i].value();
+                if (fieldName.isBlank()) {
+                    printError(console, method, Order.class, "field", "Field name can not be blank");
+                    return true;
+                }
+                ColumnInfo column = tableData.tableFields.get(fieldName);
+                if (column == null) {
+                    printError(console, method, Order.class, "field",
+                            "Field name '" + fieldName + "' not exist in table " + tableData.tableInfo.classPath);
+                    return true;
+                }
+                orderByColumns[i] = column;
             }
         }
 
@@ -107,18 +110,21 @@ public class MethodInfo {
             }
 
             // Check if the return field is valid
-            if (returnField != null) {
-                // Check field exit
-                ColumnInfo column = tableData.tableFields.get(returnField);
-                if (column == null) {
-                    printError(console, method, Select.class, "field",
-                            "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
-                    return true;
+            if (returnField != null || returnColumnSql != null) {
+                if (returnField != null) {
+                    // Check field exit
+                    ColumnInfo column = tableData.tableFields.get(returnField);
+                    if (column == null) {
+                        printError(console, method, Select.class, "field",
+                                "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
+                        return true;
+                    }
+                    this.returnColumn = column;
                 }
+
                 String returnTypeStr = returnTypeMirror.toString();
                 if (returnTypeStr.startsWith("java.lang.")) returnTypeStr = returnTypeStr.substring(10);
                 this.returnType = returnTypeStr;
-                this.returnColumn = column;
             }
 
             // Check if return type is List
@@ -142,10 +148,14 @@ public class MethodInfo {
                 return false;
             }
         } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
-            if (primitiveReturnType.getKind() == TypeKind.BOOLEAN)
+            if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
+                this.returnType = "boolean";
                 return false;
-            if (primitiveReturnType.getKind() == TypeKind.INT)
+            }
+            if (primitiveReturnType.getKind() == TypeKind.INT) {
+                this.returnType = "int";
                 return false;
+            }
         } else if (returnTypeMirror instanceof ArrayType) {
             // Only allow when return field is used
             if (returnField != null) {
@@ -216,8 +226,10 @@ public class MethodInfo {
 
         // Process class data
         if ((parameter.asType() instanceof DeclaredType declaredType) &&
+                !declaredType.asElement().getKind().equals(ElementKind.ENUM) &&
                 !declaredType.toString().startsWith("java.lang.") &&
-                !declaredType.toString().startsWith("java.sql.")) {
+                !declaredType.toString().startsWith("java.sql.") &&
+                !declaredType.toString().startsWith("java.io.")) {
             TypeElement typeElement = (TypeElement) declaredType.asElement();
             String classType = declaredType.asElement().getSimpleName().toString();
             return addClassFieldsColumn(typeElement, classType, parameterName, parameter, console);
@@ -285,8 +297,7 @@ public class MethodInfo {
 
         // Check column in table
         if (column == null) {
-            console.printMessage(ERROR, "Field '" + tableFieldName + "' not exist in table " +
-                    tableData.tableInfo.classPath, parameter);
+            console.printMessage(ERROR, "Field '" + tableFieldName + "' not exist in table '" + tableData.tableInfo.classPath + "'", parameter);
             return true;
         }
         // Check column type is same
