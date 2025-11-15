@@ -27,20 +27,20 @@ Based on comprehensive performance tests comparing EasyJDBC with JPA:
 
 ### Test Configuration
 
-| Parameter       | Value                         |
-|-----------------|-------------------------------|
-| **Dataset**     | 100,000 User + Device records |
-| **Iterations**  | 10 iterations average         |
-| **Query**       | query with 400 iterations     |
-| **Database**    | H2 in-memory                  |
-| **Environment** | Spring Boot 3.5.3, Java 17    |
+| Parameter       | Value                                               |
+|-----------------|-----------------------------------------------------|
+| **Dataset**     | 100,000 User + Device records                       |
+| **Iterations**  | 10 iterations average                               |
+| **Query**       | query with 400 iterations (with JPA FetchType.LAZY) |
+| **Database**    | H2 in-memory                                        |
+| **Environment** | Spring Boot 3.5.3, Java 17                          |
 
 ### Performance Test Results
 
 | Test Type  | Operation                  | EasyJDBC Avg | JPA Avg | Performance Gain |
 |------------|----------------------------|--------------|---------|------------------|
-| **Insert** | 100K User + Device records | ~1600ms      | ~2500ms | **1.5x faster**  |
-| **Query**  | 400 iterations             | ~2257ms      | ~4421ms | **2.0x faster**  |
+| **Insert** | 100K User + Device records | ~1477ms      | ~2345ms | **1.5x faster**  |
+| **Query**  | 400 iterations             | ~2140ms      | ~4358ms | **2.0x faster**  |
 
 ### Test Execution
 
