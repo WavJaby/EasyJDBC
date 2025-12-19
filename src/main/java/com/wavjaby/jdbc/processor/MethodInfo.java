@@ -38,8 +38,10 @@ public class MethodInfo {
     public boolean returnList;
     public String returnType;
 
-    public boolean insertMethod;
     public ColumnInfo returnColumn;
+    // Insert method
+    public final boolean batchInsert;
+    public boolean insertMethod;
 
     public MethodInfo(ExecutableElement method, TableData tableData) {
         this.method = method;
@@ -63,6 +65,9 @@ public class MethodInfo {
         Select select = method.getAnnotation(Select.class);
         this.returnField = select == null || select.field().isEmpty() ? null : select.field();
         this.returnColumnSql = select == null || select.columnSql().isEmpty() ? null : select.columnSql();
+
+        BatchInsert batchInsert = method.getAnnotation(BatchInsert.class);
+        this.batchInsert = batchInsert != null;
     }
 
     public boolean parseMethod(Messager console) {
@@ -85,19 +90,24 @@ public class MethodInfo {
                 orderByColumns[i] = column;
             }
         }
-
+        
+        // Check @Count method return type
+        if (this.count && (!(returnTypeMirror instanceof PrimitiveType primitiveReturnType) || primitiveReturnType.getKind() != TypeKind.INT)){
+            printError(console, method, Count.class, null, "Count method must return int");
+            return true;
+        }
+        
         // Check method to create
         if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
             String typeClassPath = declaredReturnType.asElement().toString();
             // Check if return table itself
             if (typeClassPath.equals(tableData.tableInfo.classPath)) {
-                this.returnType = tableData.tableInfo.className;
+                this.returnTypeName = tableData.tableInfo.className;
                 this.returnSelfTable = true;
                 return false;
             }
             // Check if return class is subclass of table class
             if (checkInstanceof(tableData.tableInfo.tableClassEle, (TypeElement) declaredReturnType.asElement())) {
-                this.returnType = tableData.tableInfo.className;
                 this.returnSelfTable = true;
                 return false;
             }
@@ -122,9 +132,7 @@ public class MethodInfo {
                     this.returnColumn = column;
                 }
 
-                String returnTypeStr = returnTypeMirror.toString();
-                if (returnTypeStr.startsWith("java.lang.")) returnTypeStr = returnTypeStr.substring(10);
-                this.returnType = returnTypeStr;
+                this.returnTypeName = getDeclaredTypeName(returnTypeMirror);
             }
 
             // Check if return type is List
@@ -134,7 +142,8 @@ public class MethodInfo {
                 TypeMirror genericSuperType = declaredReturnType.getTypeArguments().get(0);
                 // Check generic type is valid
                 if (genericSuperType.toString().equals(tableData.tableInfo.classPath)) {
-                    this.returnType = tableData.tableInfo.className;
+                    this.returnSelfTable = true;
+                    this.returnTypeName = tableData.tableInfo.className;
                     return false;
                 } else if (returnField != null || returnColumnSql != null) {
                     String returnTypeStr = genericSuperType.toString();
@@ -189,6 +198,24 @@ public class MethodInfo {
     public boolean parseParamsToColumns(Messager console) {
         List<? extends VariableElement> methodParams = method.getParameters();
 
+        if (batchInsert) {
+            if (methodParams.size() == 1 &&
+                    methodParams.get(0).asType() instanceof DeclaredType declaredType &&
+                    // Check param is List<tableClass>
+                    declaredType.asElement().toString().equals(List.class.getName()) &&
+                    declaredType.getTypeArguments().get(0) instanceof DeclaredType genericSuperType &&
+                    genericSuperType.toString().equals(tableData.tableInfo.classPath) &&
+                    // Check return type is int
+                    this.returnTypeMirror instanceof PrimitiveType primitiveReturnType &&
+                    primitiveReturnType.getKind() == TypeKind.INT) {
+                insertMethod = true;
+                return addElement(genericSuperType.asElement(), methodParams.get(0).getSimpleName().toString(), console);
+            } else {
+                console.printMessage(ERROR, "@BatchInsert should use List<TableClass> as parameter and return int", method);
+                return true;
+            }
+        }
+
         // Check if param is table class
         if (methodParams.size() == 1 &&
                 methodParams.get(0).asType() instanceof DeclaredType declaredType &&
@@ -205,10 +232,11 @@ public class MethodInfo {
         }
         return false;
     }
-
+    
     private boolean addElement(Element parameter, Messager console) {
-        String parameterType = parameter.asType().toString();
         String parameterName = parameter.getSimpleName().toString();
+
+    private boolean addElement(Element parameter, String parameterName, Messager console) {
 
         // Custom param name
         FieldName fieldName = parameter.getAnnotation(FieldName.class);
