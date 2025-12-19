@@ -56,8 +56,8 @@ public class TableInfo {
             this.classPackagePath = "";
         else
             this.classPackagePath = classPath.substring(0, i);
-        this.name = !table.name().isBlank() ? table.name() : convertPropertyNameToUnderscoreName(className);
-        this.schema = table.schema().isBlank() ? null : table.schema();
+        this.name = convertPropertyNameToUnderscoreName(!table.name().isBlank() ? table.name() : className);
+        this.schema = table.schema().isBlank() ? null : convertPropertyNameToUnderscoreName(table.schema());
         this.fullname = schema == null ? name : schema + '.' + name;
 
         this.repoIntClassElement = repoIntClassElement;
