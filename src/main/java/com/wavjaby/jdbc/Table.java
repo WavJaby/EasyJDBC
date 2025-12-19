@@ -24,5 +24,6 @@ public @interface Table {
 
     UniqueConstraint[] uniqueConstraints() default {};
 
+    
 //    Index[] indexes() default {};
 }

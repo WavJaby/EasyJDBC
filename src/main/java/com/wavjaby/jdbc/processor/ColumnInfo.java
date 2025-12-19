@@ -25,6 +25,7 @@ public class ColumnInfo {
     public final boolean nullable;
     public final boolean isPrimaryKey;
     public final boolean isUniqueKey;
+    public final boolean isGroupedUniqueKey;
     public final boolean isForeignKey;
     public final Object defaultValue;
 
@@ -92,6 +93,7 @@ public class ColumnInfo {
         this.columnName = getColumnName(field);
 
         boolean isUniqueKey = false;
+        boolean isGroupedUniqueKey = false;
         if (column != null) {
             if (!column.nullable())
                 nullable = false;
@@ -104,17 +106,18 @@ public class ColumnInfo {
             if (joinColumn.unique())
                 isUniqueKey = true;
         }
+        // Check if this column is in grouped unique key
         for (UniqueConstraint uniqueConstraint : tableInfo.tableAnn.uniqueConstraints()) {
             for (String name : uniqueConstraint.columnNames()) {
                 if (name.equals(columnName)) {
-                    isUniqueKey = true;
+                    isGroupedUniqueKey = true;
                     break;
                 }
             }
-            if (isUniqueKey) break;
+            if (isGroupedUniqueKey) break;
             for (String name : uniqueConstraint.fieldNames()) {
                 if (name.equals(field.getSimpleName().toString())) {
-                    isUniqueKey = true;
+                    isGroupedUniqueKey = true;
                     break;
                 }
             }
@@ -125,6 +128,7 @@ public class ColumnInfo {
 
         this.isForeignKey = this.joinColumn != null;
         this.isUniqueKey = isUniqueKey;
+        this.isGroupedUniqueKey = isGroupedUniqueKey;
         this.nullable = nullable;
     }
 
@@ -191,7 +195,10 @@ public class ColumnInfo {
         }
         this.referencedTableData = refrenceTableData;
         this.referencedColumnInfo = referencedColumnInfo;
-        tableData.addDependency(referencedColumnInfo.tableInfo.repoIntClassPath);
+
+        // Prevent adding dependency to itself, if Repo interface is in the same class
+        if (!referencedColumnInfo.tableInfo.repoIntClassPath.startsWith(referencedColumnInfo.tableInfo.classPath))
+            tableData.addDependency(referencedColumnInfo.tableInfo.repoIntClassPath);
 
         return false;
     }
