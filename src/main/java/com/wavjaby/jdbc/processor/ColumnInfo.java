@@ -6,7 +6,6 @@ import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import java.util.Map;
 
@@ -71,13 +70,14 @@ public class ColumnInfo {
         boolean isArray = false;
         boolean isEnum = false;
         TypeMirror type = field.asType();
-        if (type.getKind() == TypeKind.ARRAY) {
-            isArray = true;
-            type = ((ArrayType) type).getComponentType();
+        if (type instanceof ArrayType arrayType) {
+            type = arrayType.getComponentType();
+            // Require a declared type for array, if its primitive type, treat it as single data
+            isArray = type instanceof DeclaredType;
         }
-        if (type.getKind() == TypeKind.DECLARED) {
+        if (type instanceof DeclaredType declaredType) {
             isString = type.toString().equals(String.class.getName());
-            isEnum = ((DeclaredType) type).asElement().getKind() == ElementKind.ENUM;
+            isEnum = declaredType.asElement().getKind() == ElementKind.ENUM;
         }
         this.isString = isString;
         this.isArray = isArray;

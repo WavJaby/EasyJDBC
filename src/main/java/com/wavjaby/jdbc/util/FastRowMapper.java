@@ -39,7 +39,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
     private final int resultFieldCount;
     private final Integer[] staticFieldMap;
     private final Class<?>[] staticFieldType;
-    private final GenericConverter[] staticFieldConvecter;
+    private final GenericConverter[] staticFieldConverter;
 
     public FastRowMapper(Class<T> mappedClass, int columnCount) {
         Constructor<T> constructor = getConstructor(mappedClass);
@@ -47,7 +47,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
         resultFieldCount = columnCount;
         staticFieldMap = null;
         staticFieldType = new Class[columnCount];
-        staticFieldConvecter = new GenericConverter[columnCount];
+        staticFieldConverter = new GenericConverter[columnCount];
 
         int index = 0;
         Parameter[] parameters = constructor.getParameters();
@@ -72,7 +72,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
         }
         staticFieldMap = new Integer[collumnMap.size()];
         staticFieldType = new Class[collumnMap.size()];
-        staticFieldConvecter = new GenericConverter[collumnMap.size()];
+        staticFieldConverter = new GenericConverter[collumnMap.size()];
 
         int dataObjIndex = 0;
         for (Parameter parameter : parameters) {
@@ -147,13 +147,15 @@ public class FastRowMapper<T> implements RowMapper<T> {
             if (rawVal != null && needConvert(rawVal.getClass(), targetType)) {
                 if (isEnumStringArray(rawVal, targetType))
                     rawVal = convertEnumStringArray(rawVal, targetType.getComponentType(), i);
+                else if (isArray(rawVal, targetType))
+                    rawVal = convertArray(rawVal, targetType.getComponentType());
                 else {
                     TypeDescriptor sourceType = TypeDescriptor.valueOf(rawVal.getClass());
                     TypeDescriptor targetTypeInfo = TypeDescriptor.valueOf(targetType);
                     // Get cached converter
-                    GenericConverter converter = staticFieldConvecter[i];
+                    GenericConverter converter = staticFieldConverter[i];
                     if (converter == null)
-                        converter = staticFieldConvecter[i] = getConverter(sourceType, targetTypeInfo);
+                        converter = staticFieldConverter[i] = getConverter(sourceType, targetTypeInfo);
 
                     rawVal = converter.convert(rawVal, sourceType, targetTypeInfo);
                 }
@@ -180,6 +182,30 @@ public class FastRowMapper<T> implements RowMapper<T> {
         }
     }
 
+    private static Object convertArray(Object rawArrayVal, Class<?> targetType) {
+        Object[] rawValArray;
+        try {
+            rawValArray = (Object[]) ((java.sql.Array) rawArrayVal).getArray();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+
+        if (rawValArray == null || rawValArray.length == 0) {
+            return java.lang.reflect.Array.newInstance(targetType, 0);
+        }
+
+        return rawValArray;
+    }
+
+    private static boolean isArray(Object sourceType, Class<?> targetType) {
+        try {
+            return targetType.isArray() &&
+                    ClassUtils.isAssignable(java.sql.Array.class, sourceType.getClass());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
     private Object convertEnumStringArray(Object rawArrayVal, Class<?> targetType, int index) {
         Object[] rawValArray;
         try {
@@ -194,9 +220,9 @@ public class FastRowMapper<T> implements RowMapper<T> {
         Object enumArray = Array.newInstance(targetType, rawValArray.length);
         TypeDescriptor sourceType = TypeDescriptor.valueOf(String.class);
         TypeDescriptor targetTypeInfo = TypeDescriptor.valueOf(targetType);
-        GenericConverter converter = staticFieldConvecter[index];
+        GenericConverter converter = staticFieldConverter[index];
         if (converter == null)
-            converter = staticFieldConvecter[index] = getConverter(sourceType, targetTypeInfo);
+            converter = staticFieldConverter[index] = getConverter(sourceType, targetTypeInfo);
 
         for (int i = 0; i < rawValArray.length; i++) {
             Object converted = converter.convert(rawValArray[i], sourceType, targetTypeInfo);
