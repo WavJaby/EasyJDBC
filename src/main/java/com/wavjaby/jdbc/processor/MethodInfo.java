@@ -34,10 +34,10 @@ public class MethodInfo {
     // Select return type
     private final String returnField;
     public final String returnColumnSql;
+    // Return type
     public boolean returnSelfTable;
     public boolean returnList;
-    public String returnType;
-
+    public String returnTypeName;
     public ColumnInfo returnColumn;
     // Insert method
     public final boolean batchInsert;
@@ -108,6 +108,7 @@ public class MethodInfo {
             }
             // Check if return class is subclass of table class
             if (checkInstanceof(tableData.tableInfo.tableClassEle, (TypeElement) declaredReturnType.asElement())) {
+                this.returnTypeName = tableData.tableInfo.className;
                 this.returnSelfTable = true;
                 return false;
             }
@@ -146,9 +147,7 @@ public class MethodInfo {
                     this.returnTypeName = tableData.tableInfo.className;
                     return false;
                 } else if (returnField != null || returnColumnSql != null) {
-                    String returnTypeStr = genericSuperType.toString();
-                    if (returnTypeStr.startsWith("java.lang.")) returnTypeStr = returnTypeStr.substring(10);
-                    this.returnType = returnTypeStr;
+                    this.returnTypeName = getDeclaredTypeName(genericSuperType);
                     return false;
                 }
             }
@@ -158,11 +157,11 @@ public class MethodInfo {
             }
         } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
             if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
-                this.returnType = "boolean";
+                this.returnTypeName = "boolean";
                 return false;
             }
             if (primitiveReturnType.getKind() == TypeKind.INT) {
-                this.returnType = "int";
+                this.returnTypeName = "int";
                 return false;
             }
         } else if (returnTypeMirror instanceof ArrayType) {
@@ -175,9 +174,7 @@ public class MethodInfo {
                             "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
                     return true;
                 }
-                String returnTypeStr = returnTypeMirror.toString();
-                if (returnTypeStr.startsWith("java.lang.")) returnTypeStr = returnTypeStr.substring(10);
-                this.returnType = returnTypeStr;
+                this.returnTypeName = getDeclaredTypeName(returnTypeMirror);
                 this.returnColumn = column;
                 return false;
             } else {
@@ -185,7 +182,7 @@ public class MethodInfo {
                 return true;
             }
         } else if (returnTypeMirror instanceof NoType) {
-            this.returnType = "void";
+            this.returnTypeName = "void";
             return false;
         }
 
@@ -193,6 +190,12 @@ public class MethodInfo {
                 "' for table class '" + tableData.tableInfo.classPath +
                 "', method: '" + method.toString() + "' return type '" + returnTypeMirror + "' is not acceptable", method);
         return true;
+    }
+
+    private static String getDeclaredTypeName(TypeMirror genericSuperType) {
+        String returnTypeStr = genericSuperType.toString();
+        if (returnTypeStr.startsWith("java.lang.")) return returnTypeStr.substring(10);
+        return returnTypeStr;
     }
 
     public boolean parseParamsToColumns(Messager console) {
@@ -235,8 +238,11 @@ public class MethodInfo {
     
     private boolean addElement(Element parameter, Messager console) {
         String parameterName = parameter.getSimpleName().toString();
+        return addElement(parameter, parameterName, console);
+    }
 
     private boolean addElement(Element parameter, String parameterName, Messager console) {
+        TypeMirror parameterType = parameter.asType();
 
         // Custom param name
         FieldName fieldName = parameter.getAnnotation(FieldName.class);
@@ -259,8 +265,7 @@ public class MethodInfo {
                 !declaredType.toString().startsWith("java.sql.") &&
                 !declaredType.toString().startsWith("java.io.")) {
             TypeElement typeElement = (TypeElement) declaredType.asElement();
-            String classType = declaredType.asElement().getSimpleName().toString();
-            return addClassFieldsColumn(typeElement, classType, parameterName, parameter, console);
+            return addClassFieldsColumn(typeElement, parameterName, parameter, console);
         }
 
         String[] fieldNames = fieldName != null
@@ -271,7 +276,7 @@ public class MethodInfo {
         return addParamColumn(parameterType, parameterName, fieldNames, where, parameter, console);
     }
 
-    private boolean addClassFieldsColumn(TypeElement classObj, String classType, String className, Element parameter, Messager console) {
+    private boolean addClassFieldsColumn(TypeElement classObj, String className, Element parameter, Messager console) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(classObj, fields);
 
@@ -292,19 +297,19 @@ public class MethodInfo {
 
             columns.add(column);
         }
-        params.add(new MethodParamInfo(parameter, columns, classType, className, true, null));
+        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(classObj.asType()), className, true, null));
         return false;
     }
 
-    private boolean addParamColumn(String parameterType, String parameterName, String[] tableFieldNames, Where where,
+    private boolean addParamColumn(TypeMirror parameterType, String parameterName, String[] tableFieldNames, Where where,
                                    Element parameter, Messager console) {
         List<ColumnInfo> columns = new ArrayList<>();
         for (String tableFieldName : tableFieldNames) {
             ColumnInfo column = tableData.tableFields.get(tableFieldName);
-            if (checkFieldTypeAndName(parameterType, tableFieldName, parameter, null, console, column)) continue;
+            if (checkFieldTypeAndName(parameterType.toString(), tableFieldName, parameter, null, console, column)) continue;
 
             // Check ignore case is used on string type only
-            if (where != null && where.ignoreCase() && !parameterType.equals(String.class.getName())) {
+            if (where != null && where.ignoreCase() && !parameterType.toString().equals(String.class.getName())) {
                 AnnotationMirror whereMirror = getAnnotationMirror(parameter, Where.class);
                 console.printMessage(ERROR, "ignoreCase can only be used with String type parameter",
                         parameter, whereMirror, getAnnotationValue(whereMirror, "ignoreCase"));
@@ -314,8 +319,7 @@ public class MethodInfo {
             columns.add(column);
         }
 
-        if (parameterType.startsWith("java.lang.")) parameterType = parameterType.substring(10);
-        params.add(new MethodParamInfo(parameter, columns, parameterType, parameterName, false, where));
+        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, where));
         return false;
     }
 

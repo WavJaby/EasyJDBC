@@ -9,7 +9,7 @@ import java.util.List;
 
 public class MethodParamInfo {
     public final List<ColumnInfo> columns;
-    public final String paramType;
+    public final String paramTypeName;
     public final String paramName;
     public final boolean dataClass;
     public final boolean isRecord;
@@ -20,9 +20,9 @@ public class MethodParamInfo {
     // Default = "="
     public final String whereOperation;
 
-    public MethodParamInfo(Element parameter, List<ColumnInfo> columns, String paramType, String paramName, boolean dataClass, Where where) {
+    public MethodParamInfo(Element parameter, List<ColumnInfo> columns, String paramTypeName, String paramName, boolean dataClass, Where where) {
         this.columns = columns;
-        this.paramType = paramType;
+        this.paramTypeName = paramTypeName;
         this.paramName = paramName;
         this.parameter = parameter;
         this.dataClass = dataClass;
