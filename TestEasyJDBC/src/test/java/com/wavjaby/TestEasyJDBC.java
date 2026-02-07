@@ -180,6 +180,11 @@ public class TestEasyJDBC {
         List<Long> friendsOf2 = friendRepository.getFriendIds(id2);
         assertTrue(friendsOf2.contains(id1));
 
+        // 5.1 Test complex query
+        assertEquals(1, friendRepository.countFriends(id1));
+        List<Long> complexFriendsOf1 = friendRepository.getFriendIdsComplex(id1);
+        assertTrue(complexFriendsOf1.contains(id2));
+
         // 6. Delete friend
         assertTrue(friendRepository.delete(id1, id2));
         Assertions.assertFalse(friendRepository.isFriend(id1, id2));

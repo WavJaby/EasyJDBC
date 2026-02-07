@@ -47,6 +47,18 @@ public interface FriendRepository {
     boolean isFriend(@Where(value = {"userId", "friendId"}) long userIdA,
                      @Where(value = {"userId", "friendId"}) long userIdB);
 
+    @QuerySQL("ACCEPT=TRUE AND (USER_ID=:userId OR FRIEND_ID=:userId)")
+    @Select(columnSql = "COUNT(*)")
+    int countFriends(long userId);
+
+    @QuerySQL("ACCEPT=TRUE AND (USER_ID=:userId OR FRIEND_ID=:userId)")
+    @Select(columnSql = """
+            CASE WHEN USER_ID = :userId
+                 THEN FRIEND_ID
+                 ELSE USER_ID
+            END""")
+    List<Long> getFriendIdsComplex(long userId);
+
     @QuerySQL("(ACCEPT IS NULL OR ACCEPT=FALSE)")
     @Delete
     boolean deleteRequest(long userId, long friendId);
