@@ -9,7 +9,7 @@ import java.sql.Timestamp;
 @Table(repositoryClass = DeviceRepository.class)
 public record Device(
         @Id
-        @GenericGenerator(strategy = Snowflake.class)
+        @GenericGenerator()
         long id,
         @JoinColumn(referencedClass = User.class, referencedClassFieldName = "userId")
         long ownerId,
