@@ -1,4 +1,4 @@
-package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.Table;
 import com.wavjaby.persistence.UniqueConstraint;
@@ -10,7 +10,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import java.util.*;
 
-import static com.wavjaby.jdbc.processor.AnnotationHelper.*;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class TableData {
@@ -41,7 +41,7 @@ public class TableData {
         this.tableInfo = tableInfo;
     }
 
-    boolean parseTableField(Messager console) {
+    public boolean parseTableField(Messager console) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(tableInfo.tableClassEle, fields);
 

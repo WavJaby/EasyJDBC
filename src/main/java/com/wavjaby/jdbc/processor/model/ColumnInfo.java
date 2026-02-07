@@ -1,15 +1,18 @@
-package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.persistence.*;
 
 import javax.annotation.processing.Messager;
-import javax.lang.model.element.*;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeMirror;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.*;
+import java.util.List;
 import java.util.Map;
 
-import static com.wavjaby.jdbc.processor.AnnotationHelper.*;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClass;
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
@@ -45,23 +48,18 @@ public class ColumnInfo {
         // Get GeneratedValue
         AnnotationMirror GeneratedValue = getAnnotationMirror(field, GenericGenerator.class);
         if (GeneratedValue != null) {
-            AnnotationValue strategy = getAnnotationValue(GeneratedValue, "strategy");
+            DeclaredType strategy = getAnnotationValueClass(GeneratedValue, "strategy");
             assert strategy != null;
-            this.idGenerator = (DeclaredType) strategy.getValue();
-//            if (strategy == null) {
-//                console.printMessage(ERROR, "Filed to get id provider for column '" + columnInfo.columnName + "'", columnInfo.forField);
-//                return true;
-//            }
+            this.idGenerator = strategy;
         } else
             this.idGenerator = null;
 
         // Get JoinColumn
         this.joinColumn = field.getAnnotation(JoinColumn.class);
         if (this.joinColumn != null) {
-
             // Check if annotation assign referenced class
             AnnotationMirror joinTableColumnMirror = getAnnotationMirror(field, JoinColumn.class);
-            Element referencedClass = getAnnotationValueClass(joinTableColumnMirror, "referencedClass");
+            DeclaredType referencedClass = getAnnotationValueClass(joinTableColumnMirror, "referencedClass");
             if (referencedClass != null)
                 this.referencedTableClassPath = referencedClass.toString();
             else
@@ -71,6 +69,7 @@ public class ColumnInfo {
 
         boolean isString = false, isArray = false, isEnum = false;
         TypeMirror type = field.asType();
+        // Extracts array/list element type; flags array status
         if (type instanceof ArrayType arrayType) {
             type = arrayType.getComponentType();
             // Auto-detect byte[] to BYTEA
@@ -79,10 +78,12 @@ public class ColumnInfo {
         } else if (type instanceof DeclaredType declaredType && declaredType.asElement().toString().equals(List.class.getName())) {
             type = declaredType.getTypeArguments().get(0);
         }
+
         if (type instanceof DeclaredType declaredType) {
             isString = type.toString().equals(String.class.getName());
             isEnum = declaredType.asElement().getKind() == ElementKind.ENUM;
         }
+        this.type = type;
         this.isString = isString;
         this.isArray = isArray;
         this.isEnum = isEnum;

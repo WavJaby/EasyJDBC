@@ -1,6 +1,7 @@
-package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.processor.util.AnnotationHelper;
 
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;

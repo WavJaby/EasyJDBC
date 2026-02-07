@@ -2,8 +2,8 @@ package com.wavjaby.jdbc.processor;
 
 import com.google.auto.service.AutoService;
 import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.persistence.Column;
-import com.wavjaby.persistence.QuerySQL;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -16,12 +16,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Writer;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import static com.wavjaby.jdbc.processor.AnnotationHelper.getAnnotationMirror;
-import static com.wavjaby.jdbc.processor.AnnotationHelper.getAnnotationValueClass;
-import static com.wavjaby.jdbc.processor.ProcessorUtil.getResourceAsString;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClassElement;
+import static com.wavjaby.jdbc.processor.util.ProcessorUtil.getResourceAsString;
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
@@ -61,43 +59,49 @@ public class TableProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        if (annotations.isEmpty())
-            return false;
+        try {
 
-        Map<String, TableData> tableDataMap = new HashMap<>();
-        this.console = processingEnv.getMessager();
-        for (TypeElement annotation : annotations) {
-            for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
-                TableData tableData = parseTableData((TypeElement) element);
-                if (tableData == null) return false;
-                tableDataMap.put(tableData.tableInfo.classPath, tableData);
+            if (annotations.isEmpty())
+                return false;
+
+            Map<String, TableData> tableDataMap = new HashMap<>();
+            this.console = processingEnv.getMessager();
+            for (TypeElement annotation : annotations) {
+                for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
+                    TableData tableData = parseTableData((TypeElement) element);
+                    if (tableData == null) return false;
+                    tableDataMap.put(tableData.tableInfo.classPath, tableData);
+                }
             }
+
+            boolean allSuccess = true;
+            for (TableData tableData : tableDataMap.values())
+                if (processTableData(tableData, tableDataMap)) allSuccess = false;
+            if (!allSuccess)
+                return false;
+
+            for (TableData tableData : tableDataMap.values())
+                if (generateFile(tableData)) allSuccess = false;
+            if (!allSuccess)
+                return false;
+
+            Map<String, TableData> tableDependency = new LinkedHashMap<>();
+            for (TableData data : tableDataMap.values()) {
+                processTableDependency(data, tableDataMap, tableDependency);
+            }
+
+            if (generateInitFile(tableDataMap, tableDependency))
+                return false;
+
+            if (copyUtilityClasses())
+                return false;
+
+            System.out.println("RepositoryTemplate process done " + tableDataMap.size());
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
         }
-
-        boolean allSuccess = true;
-        for (TableData tableData : tableDataMap.values())
-            if (processTableData(tableData, tableDataMap)) allSuccess = false;
-        if (!allSuccess)
-            return false;
-
-        for (TableData tableData : tableDataMap.values())
-            if (generateFile(tableData)) allSuccess = false;
-        if (!allSuccess)
-            return false;
-
-        Map<String, TableData> tableDependency = new LinkedHashMap<>();
-        for (TableData data : tableDataMap.values()) {
-            processTableDependency(data, tableDataMap, tableDependency);
-        }
-
-        if (generateInitFile(tableDataMap, tableDependency))
-            return false;
-
-        if (copyUtilityClasses())
-            return false;
-
-        System.out.println("RepositoryTemplate process done " + tableDataMap.size());
-        return true;
     }
 
     private void processTableDependency(TableData data, Map<String, TableData> tableDataMap, Map<String, TableData> dependency) {
@@ -115,12 +119,12 @@ public class TableProcessor extends AbstractProcessor {
         // Get table repository class
         AnnotationMirror tableMirror = getAnnotationMirror(element, Table.class);
         assert tableMirror != null;
-        TypeElement repoInterfaceClass = (TypeElement) getAnnotationValueClass(tableMirror, "repositoryClass");
+        TypeElement repoInterfaceClass = (TypeElement) getAnnotationValueClassElement(tableMirror, "repositoryClass");
         if (repoInterfaceClass == null) {
             console.printMessage(ERROR, "The 'repositoryClass' is not given", element);
             return null;
         }
-        TypeElement virtualBaseClass = (TypeElement) getAnnotationValueClass(tableMirror, "virtualBaseClass");
+        TypeElement virtualBaseClass = (TypeElement) getAnnotationValueClassElement(tableMirror, "virtualBaseClass");
 
         // Get table definition class name
         TableInfo tableInfo = new TableInfo(element, repoInterfaceClass, virtualBaseClass);
@@ -730,9 +734,9 @@ public class TableProcessor extends AbstractProcessor {
         if (methodInfo.batchInsert) {
             tableData.addDependency("java.util.ArrayList", null);
             tableData.addDependency("java.util.Arrays", null);
-            repoMethodBuilder.append("        List<Object[]> batchValues = new ArrayList<>();\n");
             MethodParamInfo param = methodInfo.params.get(0);
             String typeStr = ((DeclaredType) param.parameter.asType()).asElement().getSimpleName().toString();
+            repoMethodBuilder.append("        List<Object[]> batchValues = new ArrayList<>(").append(param.paramName).append("_.size());\n");
             repoMethodBuilder.append("        for (").append(typeStr).append(' ').append(param.paramName).append(":").append(param.paramName).append("_){\n");
             repoMethodBuilder.append("            batchValues.add(new Object[]{").append(values[1], 1, values[1].length()).append("});\n");
             repoMethodBuilder.append("        }\n");
@@ -742,7 +746,7 @@ public class TableProcessor extends AbstractProcessor {
 
             if (returnInt) {
                 // Sum result count
-                repoMethodBuilder.append("return Arrays.stream(result).sum();\n");
+                repoMethodBuilder.append("        return Arrays.stream(result).sum();\n");
             }
         } else {
             repoMethodBuilder.append("        ");
@@ -956,7 +960,7 @@ public class TableProcessor extends AbstractProcessor {
 
         repoMethodBuilder.append(" jdbc.update(\"delete from ").append(tableInfo.fullname)
                 .append(queryWithArgs[0]).append("\"").append(queryWithArgs[1]).append(")")
-                .append(returnType == TypeKind.BOOLEAN ? " < 1;\n" : ";\n");
+                .append(returnType == TypeKind.BOOLEAN ? " > 0;\n" : ";\n");
 
         repoMethodBuilder.append("    }\n");
         return false;

@@ -1,4 +1,3 @@
-package com.wavjaby.jdbc.processor;
 package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.persistence.Where;

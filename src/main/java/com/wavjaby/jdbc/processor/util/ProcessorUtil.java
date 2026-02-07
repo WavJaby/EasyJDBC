@@ -1,4 +1,4 @@
-package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.util;
 
 import javax.lang.model.element.Element;
 import java.io.ByteArrayOutputStream;

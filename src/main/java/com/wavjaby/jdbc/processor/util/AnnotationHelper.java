@@ -1,4 +1,6 @@
-package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.util;
+
+import com.wavjaby.jdbc.processor.TableProcessor;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
@@ -48,7 +50,9 @@ public class AnnotationHelper {
 
     public static AnnotationValue getAnnotationValue(AnnotationMirror annotationMirror, String key) {
         if (annotationMirror == null) return null;
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : annotationMirror.getElementValues().entrySet()) {
+        Map<? extends ExecutableElement, ? extends AnnotationValue> values =
+                TableProcessor.getElementUtils().getElementValuesWithDefaults(annotationMirror);
+        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : values.entrySet()) {
             if (entry.getKey().getSimpleName().toString().equals(key))
                 return entry.getValue();
         }
@@ -93,10 +97,18 @@ public class AnnotationHelper {
         return result[0];
     }
 
-    public static Element getAnnotationValueClass(AnnotationMirror annotationMirror, String key) {
+    public static DeclaredType getAnnotationValueClass(AnnotationMirror annotationMirror, String key) {
         AnnotationValue value = getAnnotationValue(annotationMirror, key);
+        if (value == null ||
+                value.getValue() instanceof TypeMirror typeMirror && typeMirror.getKind() == TypeKind.VOID)
+            return null;
+        return ((DeclaredType) value.getValue());
+    }
+
+    public static Element getAnnotationValueClassElement(AnnotationMirror annotationMirror, String key) {
+        DeclaredType value = getAnnotationValueClass(annotationMirror, key);
         if (value == null) return null;
-        return ((DeclaredType) value.getValue()).asElement();
+        return value.asElement();
     }
 
     public static boolean checkInstanceof(TypeElement classToCheck, TypeElement targetClass) {
