@@ -671,7 +671,7 @@ public class TableProcessor extends AbstractProcessor {
         StringBuilder builder = new StringBuilder();
         builder.append("\n    public ");
 
-        if (methodInfo.returnList) builder.append("List<").append(returnType).append(">");
+        if (methodInfo.returnList) builder.append("List<").append(methodInfo.getReturnListType()).append(">");
         else builder.append(returnType);
 
         builder.append(' ').append(methodInfo.methodName).append('(');
@@ -843,13 +843,24 @@ public class TableProcessor extends AbstractProcessor {
         repoMethodBuilder.append(methodDef);
 
         StringBuilder columnQuery = new StringBuilder();
-        List<String> extraParam = new ArrayList<>();
+        StringBuilder columnArgs = new StringBuilder();
         if (!methodInfo.returnColumnSqlParams.isEmpty()) {
+            boolean first = true;
             for (QueryParamInfo param : methodInfo.returnColumnSqlParams) {
                 columnQuery.append(param.sqlPart);
                 if (param.paramName != null) {
                     columnQuery.append('?');
-                    extraParam.add(param.paramName);
+                    if (!first) columnArgs.append(',');
+                    first = false;
+
+                    MethodParamInfo methodParam = param.getMethodParamInfo();
+                    if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
+                        tableData.addDependency("org.springframework.jdbc.core.SqlParameterValue", null);
+                        tableData.addDependency("static java.sql.Types.ARRAY", null);
+                        columnArgs.append("new SqlParameterValue(ARRAY,").append(param.paramName).append(")");
+                    } else {
+                        columnArgs.append(param.paramName);
+                    }
                 }
             }
         } else {
@@ -860,16 +871,16 @@ public class TableProcessor extends AbstractProcessor {
         StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
 
         // Add extra args
-        if (!extraParam.isEmpty()) {
+        if (!columnArgs.isEmpty()) {
             if (!queryWithArgs[1].isEmpty()) queryWithArgs[1].append(',');
-            queryWithArgs[1].append(String.join(",", extraParam));
+            queryWithArgs[1].append(columnArgs);
         }
 
 
         if (methodInfo.returnList)
             repoMethodBuilder.append("        return");
         else
-            repoMethodBuilder.append("        List<").append(returnTypeStr).append("> result =");
+            repoMethodBuilder.append("        List<").append(methodInfo.getReturnListType()).append("> result =");
 
         repoMethodBuilder.append(" jdbc.queryForList(\"select ")
                 .append(columnQuery).append(" from ").append(tableInfo.fullname)
@@ -894,7 +905,7 @@ public class TableProcessor extends AbstractProcessor {
         if (methodInfo.returnList)
             repoMethodBuilder.append("        return");
         else
-            repoMethodBuilder.append("        List<").append(returnTypeStr).append("> result =");
+            repoMethodBuilder.append("        List<").append(methodInfo.getReturnListType()).append("> result =");
 
         StringBuilder columnQuery = new StringBuilder();
         for (String name : tableData.tableColumnNames) {
