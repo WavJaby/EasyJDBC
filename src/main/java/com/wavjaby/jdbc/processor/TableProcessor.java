@@ -7,11 +7,9 @@ import com.wavjaby.persistence.Column;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.AnnotationMirror;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.*;
+import javax.lang.model.util.Elements;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Writer;
@@ -31,6 +29,7 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 public class TableProcessor extends AbstractProcessor {
     private final String repoTemplate, initTemplate;
     private Messager console;
+    private static Elements elementUtils;
 
     @SuppressWarnings("unused")
     public TableProcessor() {
@@ -55,6 +54,16 @@ public class TableProcessor extends AbstractProcessor {
             initTemplate = null;
         }
         this.initTemplate = initTemplate;
+    }
+
+    @Override
+    public synchronized void init(ProcessingEnvironment processingEnv) {
+        super.init(processingEnv);
+        elementUtils = processingEnv.getElementUtils();
+    }
+
+    public static Elements getElementUtils() {
+        return elementUtils;
     }
 
     @Override
@@ -862,23 +871,10 @@ public class TableProcessor extends AbstractProcessor {
         else
             repoMethodBuilder.append("        List<").append(returnTypeStr).append("> result =");
 
-        if (methodInfo.returnTypeMirror instanceof ArrayType arrayType && arrayType.getComponentType() instanceof DeclaredType declaredType) {
-            TypeMirror componentType = arrayType.getComponentType();
-
-            String name = declaredType.asElement().getSimpleName().toString();
-            String rowMapperInstanceName = name.toUpperCase() + "_INSTANCE";
-
-            repoMethodBuilder.append(" jdbc.query(\"select ")
-                    .append(columnQuery).append(" from ").append(tableInfo.fullname)
-                    .append(queryWithArgs[0]).append(sqlResultModifier(methodInfo)).append("\"")
-                    .append(",com.wavjaby.jdbc.util.ConvertArrayRowMapper.").append(rowMapperInstanceName)
-                    .append(queryWithArgs[1]).append(");\n");
-        } else {
-            repoMethodBuilder.append(" jdbc.queryForList(\"select ")
-                    .append(columnQuery).append(" from ").append(tableInfo.fullname)
-                    .append(queryWithArgs[0]).append(sqlResultModifier(methodInfo)).append("\"")
-                    .append(',').append(returnTypeStr).append(".class").append(queryWithArgs[1]).append(");\n");
-        }
+        repoMethodBuilder.append(" jdbc.queryForList(\"select ")
+                .append(columnQuery).append(" from ").append(tableInfo.fullname)
+                .append(queryWithArgs[0]).append(sqlResultModifier(methodInfo)).append("\"")
+                .append(',').append(returnTypeStr).append(".class").append(queryWithArgs[1]).append(");\n");
 
         if (!methodInfo.returnList)
             repoMethodBuilder.append("        return result.isEmpty() ? null : result.get(0);\n");
@@ -1104,7 +1100,7 @@ public class TableProcessor extends AbstractProcessor {
 
     private boolean copyUtilityClasses() {
         String[] utilityClasses = {
-                "IdentifierGenerator", "Snowflake", "ConvertArrayRowMapper", "FastRowMapper", "StringConverter", "FastResultSetExtractor"
+                "IdentifierGenerator", "Snowflake", "FastRowMapper", "StringConverter", "FastResultSetExtractor"
         };
 
         for (String className : utilityClasses) {
