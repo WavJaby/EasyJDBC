@@ -156,7 +156,7 @@ public class MethodInfo {
                     this.returnColumn = column;
                 }
 
-                this.returnTypeName = getDeclaredTypeName(returnTypeMirror);
+                this.returnTypeName = getTypeName(returnTypeMirror);
             }
 
             // Check if return type is List
@@ -170,7 +170,7 @@ public class MethodInfo {
                     this.returnTypeName = tableData.tableInfo.className;
                     return false;
                 } else if (returnField != null || returnColumnSql != null) {
-                    this.returnTypeName = getDeclaredTypeName(genericSuperType);
+                    this.returnTypeName = getTypeName(genericSuperType);
                     return false;
                 }
             }
@@ -202,7 +202,7 @@ public class MethodInfo {
                             "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
                     return true;
                 }
-                this.returnTypeName = getDeclaredTypeName(returnTypeMirror);
+                this.returnTypeName = getTypeName(returnTypeMirror);
                 this.returnColumn = column;
                 return false;
             } else {
@@ -220,10 +220,28 @@ public class MethodInfo {
         return true;
     }
 
-    private static String getDeclaredTypeName(TypeMirror genericSuperType) {
-        String returnTypeStr = genericSuperType.toString();
-        if (returnTypeStr.startsWith("java.lang.")) return returnTypeStr.substring(10);
-        return returnTypeStr;
+    public String getReturnListType() {
+        String typeStr = returnTypeName;
+        if (returnTypeMirror instanceof PrimitiveType primitiveType) {
+            return switch (primitiveType.getKind()) {
+                case BOOLEAN -> "Boolean";
+                case BYTE -> "Byte";
+                case SHORT -> "Short";
+                case INT -> "Integer";
+                case LONG -> "Long";
+                case CHAR -> "Character";
+                case FLOAT -> "Float";
+                case DOUBLE -> "Double";
+                default -> typeStr;
+            };
+        }
+        return typeStr;
+    }
+
+    private static String getTypeName(TypeMirror typeMirror) {
+        String typeStr = typeMirror.toString();
+        if (typeStr.startsWith("java.lang.")) return typeStr.substring(10);
+        return typeStr;
     }
 
     private static boolean parseSqlParam(String sql, List<QueryParamInfo> params) {
@@ -246,18 +264,15 @@ public class MethodInfo {
     }
 
     private void setSqlParamDefined(String paramName, MethodParamInfo methodParamInfo) {
-
         for (QueryParamInfo param : querySqlParams) {
             if (param.paramName != null && param.paramName.equals(paramName)) {
                 param.setMethodParamInfo(methodParamInfo);
-                return;
             }
         }
 
         for (QueryParamInfo param : returnColumnSqlParams) {
             if (param.paramName != null && param.paramName.equals(paramName)) {
                 param.setMethodParamInfo(methodParamInfo);
-                return;
             }
         }
     }
@@ -389,7 +404,7 @@ public class MethodInfo {
 
             columns.add(column);
         }
-        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(classType.asType()), parameterName, true, null, false));
+        params.add(new MethodParamInfo(parameter, columns, getTypeName(classType.asType()), parameterName, true, null, false));
         return error;
     }
 
@@ -430,7 +445,7 @@ public class MethodInfo {
             }
             if (error) return true;
 
-            methodParamInfo = new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, where, customSqlParam);
+            methodParamInfo = new MethodParamInfo(parameter, columns, getTypeName(parameterType), parameterName, false, where, customSqlParam);
             setSqlParamDefined(parameterName, methodParamInfo);
         }
         // Add column based on field name
@@ -445,7 +460,7 @@ public class MethodInfo {
             else
                 customSqlParam = true;
 
-            methodParamInfo = new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, null, customSqlParam);
+            methodParamInfo = new MethodParamInfo(parameter, columns, getTypeName(parameterType), parameterName, false, null, customSqlParam);
             setSqlParamDefined(parameterName, methodParamInfo);
         }
 
