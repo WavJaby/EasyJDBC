@@ -31,13 +31,14 @@ public record User(
         String phoneNumber,
         byte gender,
 
-        String email,
+        String[] email,
         String address,
         Date birthDate,
         Timestamp registrationDate,
         boolean active,
         int loginCount,
-        double accountBalance
+        double accountBalance,
+        Long[] deviceIds
 ) implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
