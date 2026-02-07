@@ -67,14 +67,15 @@ public class ColumnInfo {
         } else
             this.referencedTableClassPath = null;
 
-        boolean isString = false;
-        boolean isArray = false;
-        boolean isEnum = false;
+        boolean isString = false, isArray = false, isEnum = false;
         TypeMirror type = field.asType();
         if (type instanceof ArrayType arrayType) {
             type = arrayType.getComponentType();
-            // Require a declared type for array, if its primitive type, treat it as single data
-            isArray = type instanceof DeclaredType;
+            // Auto-detect byte[] to BYTEA
+            if (type.getKind() != TypeKind.BYTE)
+                isArray = true;
+        } else if (type instanceof DeclaredType declaredType && declaredType.asElement().toString().equals(List.class.getName())) {
+            type = declaredType.getTypeArguments().get(0);
         }
         if (type instanceof DeclaredType declaredType) {
             isString = type.toString().equals(String.class.getName());
@@ -125,6 +126,9 @@ public class ColumnInfo {
 
         if (isPrimaryKey || defaultValue != null)
             nullable = false;
+        
+        if (type instanceof PrimitiveType)
+            nullable = false;
 
         this.isForeignKey = this.joinColumn != null;
         this.isUniqueKey = isUniqueKey;
@@ -133,6 +137,11 @@ public class ColumnInfo {
     }
 
     public boolean parseColumnCheck(Messager console) {
+        if (isArray && !(type instanceof DeclaredType)) {
+            console.printMessage(ERROR, "Primitive array is not supported: " + field.asType().toString() + ", use List or DeclaredType array instead.", field);
+            return true;
+        }
+
         if (joinColumn != null) {
             if (joinColumn.referencedColumnName().isEmpty() && joinColumn.referencedClassFieldName().isEmpty()) {
                 console.printMessage(ERROR, "Least one of referencedColumnName and referencedFieldName should be provided for '@JoinTable'", field);

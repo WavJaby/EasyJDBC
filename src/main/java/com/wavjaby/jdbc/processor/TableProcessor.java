@@ -1066,8 +1066,8 @@ public class TableProcessor extends AbstractProcessor {
 
     private boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql) {
         VariableElement field = columnInfo.field;
-        TypeKind type = field.asType().getKind();
-        String columnType = toSqlType(field, type, columnInfo.column, false);
+        TypeMirror type = field.asType();
+        String columnType = toSqlType(type, columnInfo.column);
         if (columnType == null) {
             console.printMessage(ERROR, "Unknown SQL type for: " + field.asType().toString(), field);
             return true;
@@ -1121,23 +1121,55 @@ public class TableProcessor extends AbstractProcessor {
         return sb.append("\\\"").append(columnName).append("\\\"");
     }
 
-    public static String toSqlType(Element field, TypeKind type, Column column, boolean typeOnly) {
-        boolean string = false;
-        if (type == TypeKind.DECLARED) {
-            String typeName = field.asType().toString();
+    public static String toSqlType(TypeMirror type, Column column) {
+        TypeKind kind = type.getKind();
+
+
+        if (type instanceof DeclaredType declaredType) {
+            String typeName = type.toString();
             // String
-            if (typeName.startsWith(String.class.getName())) string = true;
-            else if (typeName.startsWith(Boolean.class.getName())) type = TypeKind.BOOLEAN;
-            else if (typeName.startsWith(Byte.class.getName())) type = TypeKind.BYTE;
-            else if (typeName.startsWith(Short.class.getName())) type = TypeKind.SHORT;
-            else if (typeName.startsWith(Integer.class.getName())) type = TypeKind.INT;
-            else if (typeName.startsWith(Long.class.getName())) type = TypeKind.LONG;
-            else if (typeName.startsWith(Float.class.getName())) type = TypeKind.FLOAT;
-            else if (typeName.startsWith(Double.class.getName())) type = TypeKind.DOUBLE;
-            else if (typeName.startsWith(Character.class.getName())) type = TypeKind.CHAR;
+            if (typeName.startsWith(String.class.getName())) {
+                if (column != null && column.length() != -1) {
+                    return "VARCHAR(" + column.length() + ")";
+                }
+                return "VARCHAR";
+            }
+
+            // Check if type is java.util.List
+            else if (declaredType.asElement().toString().equals(List.class.getName())) {
+                TypeMirror componentType = declaredType.getTypeArguments().get(0);
+                return toSqlType(componentType, column) + " ARRAY";
+            } else if (type.toString().equals(java.sql.Date.class.getName())) {
+                return "DATE";
+            } else if (type.toString().equals(java.sql.Timestamp.class.getName())) {
+                return "TIMESTAMP";
+            }
+            // Check if type is enum
+            else if (declaredType.asElement() instanceof TypeElement typeElement && typeElement.getKind() == ElementKind.ENUM) {
+                if (column != null && column.length() != -1) {
+                    return "VARCHAR(" + column.length() + ")";
+                }
+            } else if (typeName.startsWith(Boolean.class.getName())) kind = TypeKind.BOOLEAN;
+            else if (typeName.startsWith(Byte.class.getName())) kind = TypeKind.BYTE;
+            else if (typeName.startsWith(Short.class.getName())) kind = TypeKind.SHORT;
+            else if (typeName.startsWith(Integer.class.getName())) kind = TypeKind.INT;
+            else if (typeName.startsWith(Long.class.getName())) kind = TypeKind.LONG;
+            else if (typeName.startsWith(Float.class.getName())) kind = TypeKind.FLOAT;
+            else if (typeName.startsWith(Double.class.getName())) kind = TypeKind.DOUBLE;
+            else if (typeName.startsWith(Character.class.getName())) kind = TypeKind.CHAR;
         }
 
-        switch (type) {
+        if (type instanceof ArrayType arrayType) {
+            TypeMirror arrType = arrayType.getComponentType();
+
+            // Auto-detect byte[] to BYTEA
+            if (arrType.getKind() == TypeKind.BYTE)
+                return "BYTEA";
+
+            return toSqlType(arrType, column) + " ARRAY";
+        }
+
+        switch (kind) {
             case BOOLEAN:
                 return "BOOLEAN";
             case BYTE:
@@ -1156,28 +1188,12 @@ public class TableProcessor extends AbstractProcessor {
                             ? "NUMERIC(" + column.precision() + "," + column.scale() + ")"
                             : "NUMERIC(" + column.precision() + ")";
                 } else {
-                    if (type == TypeKind.FLOAT)
+                    if (kind == TypeKind.FLOAT)
                         return "FLOAT(24)";
                     return "FLOAT(53)";
                 }
             case CHAR:
                 return "NCHAR";
-            case ARRAY:
-                TypeKind arrType = ((ArrayType) field.asType()).getComponentType().getKind();
-                if (typeOnly)
-                    return toSqlType(field, arrType, column, true);
-                return toSqlType(field, arrType, column, false) + " ARRAY";
-            case DECLARED:
-                if (string) {
-                    if (column != null && column.length() != -1) {
-                        return "VARCHAR(" + column.length() + ")";
-                    }
-                    return "VARCHAR";
-                } else if (field.asType().toString().equals(java.sql.Date.class.getName())) {
-                    return "DATE";
-                } else if (field.asType().toString().equals(java.sql.Timestamp.class.getName())) {
-                    return "TIMESTAMP";
-                }
             default:
                 return null;
         }
