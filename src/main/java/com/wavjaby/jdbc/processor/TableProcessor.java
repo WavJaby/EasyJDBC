@@ -411,7 +411,7 @@ public class TableProcessor extends AbstractProcessor {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
 
             // Explicit column SQL selection takes highest priority
-            if (method.returnColumnSql != null) {
+            if (!method.returnColumnSqlParams.isEmpty()) {
                 if (generateRepositorySearchColumnMethod(method, tableData, repoMethodBuilder))
                     return true;
                 continue;
@@ -512,7 +512,7 @@ public class TableProcessor extends AbstractProcessor {
      * and additional query constraints.
      *
      * @param params           List of method parameter information containing column mappings and metadata
-     * @param extraQuerySQL    Additional query SQL constraints to append (can be null)
+     * @param methodInfo       Method metadata containing query SQL (can be null)
      * @param insert           true if generating INSERT clause for INSERT operation, false for UPDATE or WHERE clause
      * @param update           true if generating SET clause for UPDATE operation, false for WHERE clause
      * @param prefix           SQL prefix to prepend (e.g., " WHERE ", " SET "), can be null
@@ -521,11 +521,11 @@ public class TableProcessor extends AbstractProcessor {
      * @param tableData        Table metadata used for dependency management and column information
      * @return Array containing two StringBuilder objects: [0] = query fragment, [1] = arguments list
      */
-    private StringBuilder[] getQueryAndArgs(List<MethodParamInfo> params, QuerySQL extraQuerySQL, boolean insert, boolean update, String prefix, String conjunction, boolean tableConstructor, TableData tableData) {
+    private StringBuilder[] getQueryAndArgs(List<MethodParamInfo> params, MethodInfo methodInfo, boolean insert, boolean update, String prefix, String conjunction, boolean tableConstructor, TableData tableData) {
         StringBuilder queryBuilder = new StringBuilder();
         StringBuilder argsBuilder = new StringBuilder();
 
-        if (!tableConstructor && !params.isEmpty() || extraQuerySQL != null) {
+        if (!tableConstructor && !params.isEmpty() || methodInfo != null && methodInfo.querySql != null) {
             if (prefix != null) queryBuilder.append(prefix);
         }
         if (!tableConstructor && !params.isEmpty()) {
@@ -537,9 +537,10 @@ public class TableProcessor extends AbstractProcessor {
 
         int tempVarCount = 0;
 
-        int i = -1;
+        int conditionCount = -1;
         for (MethodParamInfo param : params) {
-            if (++i != 0) queryBuilder.append(conjunction);
+            if (param.columns.isEmpty()) continue;
+            if (++conditionCount != 0) queryBuilder.append(conjunction);
 
             // Query with multiple columns
             if (!insert && !update && param.columns.size() > 1)
@@ -562,8 +563,16 @@ public class TableProcessor extends AbstractProcessor {
                     queryBuilder.append(") ").append(param.whereOperation).append(" LOWER(?)");
                 } else if (insert)
                     quoteColumnName(queryBuilder, column.columnName);
-                else
-                    quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
+//                else
+//                    quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
+                else {
+                    if (!update && column.nullable) {
+                        quoteColumnName(queryBuilder, column.columnName);
+                        queryBuilder.append(" IS NOT DISTINCT FROM ?");
+                    } else {
+                        quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
+                    }
+                }
 
                 String argName = param.paramName;
                 // Get field if using data class
@@ -572,8 +581,7 @@ public class TableProcessor extends AbstractProcessor {
                     if (param.isRecord) argName += "()";
                 }
 
-                // Support modify array
-                if (i + j != 0) argsBuilder.append(',');
+                if (conditionCount + j != 0) argsBuilder.append(',');
                 if (tableConstructor) {
                     argsBuilder.append(argName);
                 } else {
@@ -602,16 +610,36 @@ public class TableProcessor extends AbstractProcessor {
         if (insert)
             queryBuilder.append(')');
 
-        if (extraQuerySQL != null) {
-            if (!params.isEmpty())
-                queryBuilder.append(' ').append(extraQuerySQL.conjunction()).append(' ');
-            queryBuilder.append(extraQuerySQL.value());
+        // Appends query SQL and parameters if present
+        if (methodInfo != null && methodInfo.querySql != null) {
+            if (conditionCount > -1)
+                queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
+
+            for (QueryParamInfo sqlParam : methodInfo.querySqlParams) {
+                queryBuilder.append(sqlParam.sqlPart);
+                if (sqlParam.paramName == null)
+                    continue;
+                queryBuilder.append('?');
+
+                MethodParamInfo methodParam = sqlParam.getMethodParamInfo();
+
+                if (++conditionCount != 0)
+                    argsBuilder.append(',');
+                if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
+                    tableData.addDependency("org.springframework.jdbc.core.SqlParameterValue", null);
+                    tableData.addDependency("static java.sql.Types.ARRAY", null);
+                    argsBuilder.append("new SqlParameterValue(ARRAY,").append(sqlParam.paramName).append(")");
+                } else {
+                    argsBuilder.append(sqlParam.paramName);
+                }
+
+            }
         }
         return new StringBuilder[]{queryBuilder, argsBuilder};
     }
 
-    private StringBuilder[] updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, QuerySQL querySQL, TableData tableData) {
-        StringBuilder[] where = getQueryAndArgs(whereColumns, querySQL, false, false, " where ", " and ", false, tableData);
+    private StringBuilder[] updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, MethodInfo methodInfo, TableData tableData) {
+        StringBuilder[] where = getQueryAndArgs(whereColumns, methodInfo, false, false, " where ", " and ", false, tableData);
         StringBuilder[] values = getQueryAndArgs(updateColumns, null, false, true, " set ", ",", false, tableData);
 
         values[0].append(where[0]);
@@ -679,7 +707,7 @@ public class TableProcessor extends AbstractProcessor {
             if (info.idGenerator == null) continue;
             String generator = tableData.getDependencyFieldName(info.idGenerator.toString());
             repoMethodBuilder.append("        ").append("long id").append(i).append(" = ").append(generator).append(".nextId();\n");
-            infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null));
+            infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null, false));
         }
 
         checkAndConvertEnumToStringArray(repoMethodBuilder, infos);
@@ -769,7 +797,7 @@ public class TableProcessor extends AbstractProcessor {
 
 
         // Count query result
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo.querySQL, false, false, " where ", " and ", false, tableData);
+        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
         repoMethodBuilder.append("        return jdbc.queryForObject(\"select count(*) from ").append(tableInfo.fullname)
                 .append(queryWithArgs[0]).append("\"")
                 .append(",Integer.class").append(queryWithArgs[1]).append(") > 0;\n");
@@ -786,7 +814,7 @@ public class TableProcessor extends AbstractProcessor {
 
 
         // Count query result
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo.querySQL, false, false, " where ", " and ", false, tableData);
+        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
         repoMethodBuilder.append("        return jdbc.queryForObject(\"select count(*) from ").append(tableInfo.fullname)
                 .append(queryWithArgs[0]).append("\"")
                 .append(",Integer.class").append(queryWithArgs[1]).append(");\n");
@@ -803,29 +831,20 @@ public class TableProcessor extends AbstractProcessor {
 
         StringBuilder columnQuery = new StringBuilder();
         List<String> extraParam = new ArrayList<>();
-        if (methodInfo.returnColumnSql != null) {
-            // Process SQL query part
-            String returnColumnSql = methodInfo.returnColumnSql.replaceAll(" *\r?\n *", " ");
-            Pattern pattern = Pattern.compile(":[a-zA-Z_][a-zA-Z0-9_]+");
-            Matcher matcher = pattern.matcher(returnColumnSql);
-            int index = 0;
-            while (matcher.find()) {
-                String pramName = matcher.group().substring(1);
-                boolean pramExist = methodInfo.params.stream().anyMatch(param -> param.paramName.equals(pramName));
-                if (!pramExist)
-                    continue;
-
-                extraParam.add(pramName);
-                columnQuery.append(returnColumnSql, index, matcher.start()).append('?');
-                index = matcher.end();
+        if (!methodInfo.returnColumnSqlParams.isEmpty()) {
+            for (QueryParamInfo param : methodInfo.returnColumnSqlParams) {
+                columnQuery.append(param.sqlPart);
+                if (param.paramName != null) {
+                    columnQuery.append('?');
+                    extraParam.add(param.paramName);
+                }
             }
-            columnQuery.append(returnColumnSql, index, returnColumnSql.length());
         } else {
             quoteColumnName(columnQuery, methodInfo.returnColumn.columnName);
         }
 
         // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo.querySQL, false, false, " where ", " and ", false, tableData);
+        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
 
         // Add extra args
         if (!extraParam.isEmpty()) {
@@ -871,7 +890,7 @@ public class TableProcessor extends AbstractProcessor {
         repoMethodBuilder.append(methodDef);
 
         // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo.querySQL, false, false, " where ", " and ", false, tableData);
+        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
         if (methodInfo.returnList)
             repoMethodBuilder.append("        return");
         else
@@ -931,7 +950,7 @@ public class TableProcessor extends AbstractProcessor {
         repoMethodBuilder.append(methodDef);
 
         // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo.querySQL, false, false, " where ", " and ", false, tableData);
+        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
         if (returnType != TypeKind.VOID) repoMethodBuilder.append("        return");
         else repoMethodBuilder.append("        ");
 
@@ -982,7 +1001,7 @@ public class TableProcessor extends AbstractProcessor {
         checkAndConvertEnumToStringArray(repoMethodBuilder, methodInfo.params);
 
         // Build method body, SQL query part
-        StringBuilder[] update = updateQueryAndArgs(whereColumns, updateColumns, methodInfo.querySQL, tableData);
+        StringBuilder[] update = updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
         if (methodInfo.returnSelfTable) {
             // Update query value if it will be modified
 //            for (int i = 0; i < whereColumns.size(); i++) {

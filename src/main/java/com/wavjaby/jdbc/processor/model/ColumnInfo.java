@@ -17,10 +17,12 @@ public class ColumnInfo {
     public final Column column;
     public final TableInfo tableInfo;
 
+    public final VariableElement field;
+    public final TypeMirror type;
     public final boolean isString;
     public final boolean isArray;
     public final boolean isEnum;
-    public final VariableElement field;
+
     public final String columnName;
     public final boolean nullable;
     public final boolean isPrimaryKey;

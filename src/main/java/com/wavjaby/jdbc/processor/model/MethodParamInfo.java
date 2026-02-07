@@ -1,4 +1,5 @@
 package com.wavjaby.jdbc.processor;
+package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.persistence.Where;
 
@@ -14,13 +15,13 @@ public class MethodParamInfo {
     public final boolean dataClass;
     public final boolean isRecord;
     public final Element parameter;
-    public final boolean ignoreCase;
-
     public final boolean where;
+    public final boolean ignoreCase;
+    public final boolean customSqlParam;
     // Default = "="
     public final String whereOperation;
 
-    public MethodParamInfo(Element parameter, List<ColumnInfo> columns, String paramTypeName, String paramName, boolean dataClass, Where where) {
+    public MethodParamInfo(Element parameter, List<ColumnInfo> columns, String paramTypeName, String paramName, boolean dataClass, Where where, boolean customSqlParam) {
         this.columns = columns;
         this.paramTypeName = paramTypeName;
         this.paramName = paramName;
@@ -29,8 +30,9 @@ public class MethodParamInfo {
         this.isRecord = parameter != null && parameter.asType() instanceof DeclaredType declaredType &&
                 declaredType.asElement().getKind() == ElementKind.RECORD;
         this.where = where != null;
-        this.whereOperation = this.where ? where.operation() : "=";
-
         this.ignoreCase = this.where && where.ignoreCase();
+        this.customSqlParam = customSqlParam;
+
+        this.whereOperation = this.where ? where.operation() : "=";
     }
 }

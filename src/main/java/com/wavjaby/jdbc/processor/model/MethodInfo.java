@@ -9,11 +9,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static com.wavjaby.jdbc.processor.AnnotationHelper.*;
+import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class MethodInfo {
+    private final static Pattern paramPattern = Pattern.compile(":([a-zA-Z_]\\w*)(\\.\\w+)*");
     private final TableData tableData;
     public final ExecutableElement method;
 
@@ -30,10 +33,13 @@ public class MethodInfo {
     // Limit
     public final Integer limit;
     // Extra query settings
-    public final QuerySQL querySQL;
+    public final QuerySQL querySql;
+    public final List<QueryParamInfo> querySqlParams = new ArrayList<>();
     // Select return type
     private final String returnField;
-    public final String returnColumnSql;
+    private final String returnColumnSql;
+    public final List<QueryParamInfo> returnColumnSqlParams = new ArrayList<>();
+
     // Return type
     public boolean returnSelfTable;
     public boolean returnList;
@@ -60,7 +66,7 @@ public class MethodInfo {
         this.limit = limit == null ? null : limit.value();
 
         QuerySQL extraQuerySQL = method.getAnnotation(QuerySQL.class);
-        this.querySQL = extraQuerySQL == null || extraQuerySQL.value().isEmpty() ? null : extraQuerySQL;
+        this.querySql = extraQuerySQL == null || extraQuerySQL.value().isEmpty() ? null : extraQuerySQL;
 
         Select select = method.getAnnotation(Select.class);
         this.returnField = select == null || select.field().isEmpty() ? null : select.field();
@@ -72,6 +78,23 @@ public class MethodInfo {
 
     public boolean parseMethod(Messager console) {
         if (parseParamsToColumns(console)) return true;
+
+        // Check custom SQL parameters are defined in method parameters
+        for (QueryParamInfo param : querySqlParams) {
+            if (param.paramName == null || param.isMethodParamExist()) {
+                continue;
+            }
+            printError(console, method, QuerySQL.class, "value", "Parameter '" + param.paramName + "' is not defined in method parameters");
+            return true;
+        }
+
+        for (QueryParamInfo param : returnColumnSqlParams) {
+            if (param.paramName == null || param.isMethodParamExist()) {
+                continue;
+            }
+            printError(console, method, Select.class, "columnSql", "Parameter '" + param.paramName + "' is not defined in method parameters");
+        }
+
         // Check modifier
         if (orderBy != null) {
             orderByColumns = new ColumnInfo[orderBy.length];
@@ -90,13 +113,13 @@ public class MethodInfo {
                 orderByColumns[i] = column;
             }
         }
-        
+
         // Check @Count method return type
-        if (this.count && (!(returnTypeMirror instanceof PrimitiveType primitiveReturnType) || primitiveReturnType.getKind() != TypeKind.INT)){
+        if (this.count && (!(returnTypeMirror instanceof PrimitiveType primitiveReturnType) || primitiveReturnType.getKind() != TypeKind.INT)) {
             printError(console, method, Count.class, null, "Count method must return int");
             return true;
         }
-        
+
         // Check method to create
         if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
             String typeClassPath = declaredReturnType.asElement().toString();
@@ -164,7 +187,12 @@ public class MethodInfo {
                 this.returnTypeName = "int";
                 return false;
             }
-        } else if (returnTypeMirror instanceof ArrayType) {
+        } else if (returnTypeMirror instanceof ArrayType arrayType) {
+            if (!(arrayType.getComponentType() instanceof DeclaredType) && arrayType.getComponentType().getKind() != TypeKind.BYTE) {
+                console.printMessage(ERROR, "Primitive array is not supported: " + arrayType + ", use List or DeclaredType array instead.", method);
+                return true;
+            }
+
             // Only allow when return field is used
             if (returnField != null) {
                 // Check field exit
@@ -198,8 +226,59 @@ public class MethodInfo {
         return returnTypeStr;
     }
 
+    private static boolean parseSqlParam(String sql, List<QueryParamInfo> params) {
+        String returnColumnSql = sql.replace("\"", "\\\"").replaceAll(" *\r?\n *", " ");
+        Matcher matcher = paramPattern.matcher(returnColumnSql);
+        int index = 0;
+        while (matcher.find()) {
+            String pramName = matcher.group().substring(1);
+
+            params.add(new QueryParamInfo(returnColumnSql.substring(index, matcher.start()), pramName));
+            index = matcher.end();
+        }
+        params.add(new QueryParamInfo(returnColumnSql.substring(index), null));
+        return true;
+    }
+
+    private boolean isSqlParamExist(String paramName) {
+        return querySqlParams.stream().anyMatch(param -> paramName.equals(param.paramName)) ||
+                returnColumnSqlParams.stream().anyMatch(param -> paramName.equals(param.paramName));
+    }
+
+    private void setSqlParamDefined(String paramName, MethodParamInfo methodParamInfo) {
+
+        for (QueryParamInfo param : querySqlParams) {
+            if (param.paramName != null && param.paramName.equals(paramName)) {
+                param.setMethodParamInfo(methodParamInfo);
+                return;
+            }
+        }
+
+        for (QueryParamInfo param : returnColumnSqlParams) {
+            if (param.paramName != null && param.paramName.equals(paramName)) {
+                param.setMethodParamInfo(methodParamInfo);
+                return;
+            }
+        }
+    }
+
     public boolean parseParamsToColumns(Messager console) {
         List<? extends VariableElement> methodParams = method.getParameters();
+
+        if (returnColumnSql != null) {
+            // Process SQL query part
+            if (!parseSqlParam(returnColumnSql, returnColumnSqlParams)) {
+                console.printMessage(ERROR, "Invalid SQL query: " + returnColumnSql, method);
+                return false;
+            }
+        }
+
+        if (querySql != null) {
+            if (!parseSqlParam(querySql.value(), querySqlParams)) {
+                console.printMessage(ERROR, "Invalid SQL query: " + querySql.value(), method);
+                return false;
+            }
+        }
 
         if (batchInsert) {
             if (methodParams.size() == 1 &&
@@ -220,12 +299,27 @@ public class MethodInfo {
         }
 
         // Check if param is table class
-        if (methodParams.size() == 1 &&
-                methodParams.get(0).asType() instanceof DeclaredType declaredType &&
-                declaredType.toString().equals(tableData.tableInfo.classPath)) {
-            VariableElement parameter = methodParams.get(0);
-            insertMethod = true;
-            return addElement(parameter, console);
+        VariableElement selfTableParam = null;
+        for (VariableElement parameter : methodParams) {
+            if (parameter.asType() instanceof DeclaredType declaredType &&
+                    declaredType.toString().equals(tableData.tableInfo.classPath)) {
+                insertMethod = true;
+                selfTableParam = parameter;
+            }
+        }
+        if (selfTableParam != null) {
+            if (methodParams.size() > 1) {
+                StringBuilder paramsStr = new StringBuilder();
+                for (VariableElement parameter : methodParams) {
+                    if (parameter == selfTableParam) continue;
+                    if (!paramsStr.isEmpty())
+                        paramsStr.append(',');
+                    paramsStr.append(parameter.getSimpleName());
+                }
+                console.printMessage(ERROR, "Parameter with table class can not use with other parameters: '" + paramsStr + "'", method);
+                return true;
+            }
+            return addElement(selfTableParam, console);
         }
 
         // Get method params as column name
@@ -235,8 +329,8 @@ public class MethodInfo {
         }
         return false;
     }
-    
-    private boolean addElement(Element parameter, Messager console) {
+
+    private boolean addElement(VariableElement parameter, Messager console) {
         String parameterName = parameter.getSimpleName().toString();
         return addElement(parameter, parameterName, console);
     }
@@ -268,28 +362,26 @@ public class MethodInfo {
             return addClassFieldsColumn(typeElement, parameterName, parameter, console);
         }
 
-        String[] fieldNames = fieldName != null
-                ? new String[]{fieldName.value()}
-                : where != null && where.value().length > 0
-                ? where.value()
-                : new String[]{parameterName};
-        return addParamColumn(parameterType, parameterName, fieldNames, where, parameter, console);
+        return addParamColumn(parameterType, parameterName, fieldName != null ? fieldName.value() : parameterName, where, parameter, console);
     }
 
-    private boolean addClassFieldsColumn(TypeElement classObj, String className, Element parameter, Messager console) {
+    private boolean addClassFieldsColumn(TypeElement classType, String parameterName, Element parameter, Messager console) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
-        extractClassFields(classObj, fields);
+        extractClassFields(classType, fields);
 
         List<ColumnInfo> columns = new ArrayList<>();
         // List all fields in class
+        boolean error = false;
         for (VariableElement element : fields.values()) {
             String fieldType = element.asType().toString();
             String fieldName = element.getSimpleName().toString();
 
             ColumnInfo column = tableData.tableFields.get(fieldName);
 
-            if (checkFieldTypeAndName(fieldType, fieldName, parameter, classObj, console, column))
+            if (checkFieldTypeAndName(fieldType, fieldName, parameter, parameterName, classType, false, console, column)) {
+                error = true;
                 continue;
+            }
 
             // Skip field for query
             if (element.getAnnotation(Where.class) != null)
@@ -297,48 +389,94 @@ public class MethodInfo {
 
             columns.add(column);
         }
-        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(classObj.asType()), className, true, null));
-        return false;
+        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(classType.asType()), parameterName, true, null, false));
+        return error;
     }
 
-    private boolean addParamColumn(TypeMirror parameterType, String parameterName, String[] tableFieldNames, Where where,
+    private boolean addParamColumn(TypeMirror parameterType, String parameterName, String tableFieldName, Where where,
                                    Element parameter, Messager console) {
         List<ColumnInfo> columns = new ArrayList<>();
-        for (String tableFieldName : tableFieldNames) {
-            ColumnInfo column = tableData.tableFields.get(tableFieldName);
-            if (checkFieldTypeAndName(parameterType.toString(), tableFieldName, parameter, null, console, column)) continue;
+        boolean customSqlParam = false;
+        MethodParamInfo methodParamInfo;
+        // Adds columns based on `@Where` annotation or field name
+        if (where != null) {
+            boolean error = false;
+            String[] fieldNames = where.value().length > 0
+                    ? where.value()
+                    : new String[]{parameterName};
 
-            // Check ignore case is used on string type only
-            if (where != null && where.ignoreCase() && !parameterType.toString().equals(String.class.getName())) {
-                AnnotationMirror whereMirror = getAnnotationMirror(parameter, Where.class);
-                console.printMessage(ERROR, "ignoreCase can only be used with String type parameter",
-                        parameter, whereMirror, getAnnotationValue(whereMirror, "ignoreCase"));
-                return true;
+            for (String fieldName : fieldNames) {
+                ColumnInfo column = tableData.tableFields.get(fieldName);
+                if (checkFieldTypeAndName(parameterType.toString(), fieldName, parameter, parameterName, null, false, console, column)) {
+                    error = true;
+                    continue;
+                }
+
+                // Check ignore case is used on string type only
+                if (where.ignoreCase() && !parameterType.toString().equals(String.class.getName())) {
+                    AnnotationMirror whereMirror = getAnnotationMirror(parameter, Where.class);
+                    console.printMessage(ERROR, "ignoreCase can only be used with String type parameter",
+                            parameter, whereMirror, getAnnotationValue(whereMirror, "ignoreCase"));
+                    error = true;
+                }
+
+                columns.add(column);
+
             }
 
-            columns.add(column);
+            // Check if method parameter is for SQL parameter
+            if (isSqlParamExist(parameterName)) {
+                customSqlParam = true;
+            }
+            if (error) return true;
+
+            methodParamInfo = new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, where, customSqlParam);
+            setSqlParamDefined(parameterName, methodParamInfo);
+        }
+        // Add column based on field name
+        else {
+            ColumnInfo column = tableData.tableFields.get(tableFieldName);
+            if (checkFieldTypeAndName(parameterType.toString(), tableFieldName, parameter, parameterName, null, true, console, column)) {
+                return true;
+            }
+            // If method parameter is for SQL parameter, the column will be null
+            if (column != null)
+                columns.add(column);
+            else
+                customSqlParam = true;
+
+            methodParamInfo = new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, null, customSqlParam);
+            setSqlParamDefined(parameterName, methodParamInfo);
         }
 
-        params.add(new MethodParamInfo(parameter, columns, getDeclaredTypeName(parameterType), parameterName, false, where));
+        params.add(methodParamInfo);
         return false;
     }
 
-    private boolean checkFieldTypeAndName(String parameterType, String tableFieldName, Element parameter, TypeElement classObj, Messager console, ColumnInfo column) {
-        if (classObj != null)
-            tableFieldName = classObj.asType() + "::" + tableFieldName;
+    private boolean checkFieldTypeAndName(String parameterType, String fieldName, Element parameter, String parameterName, TypeElement classType, boolean allowSqlParam, Messager console, ColumnInfo column) {
+//        if (classType != null)
+//            fieldName = classType.asType() + "::" + fieldName;
 
-        // Check column in table
+        // field for column exist and type is same
+        if (column != null && column.field.getSimpleName().toString().equals(fieldName)) {
+            return false;
+        }
+
+        // Skip check if parameter is for sql parameter
+        if (allowSqlParam && isSqlParamExist(fieldName))
+            return false;
+
+        String inClass = classType != null ? "(in class: '" + classType.asType().toString() + "', parameter: '" + parameterName + "')" : "";
+        // Column not exist
         if (column == null) {
-            console.printMessage(ERROR, "Field '" + tableFieldName + "' not exist in table '" + tableData.tableInfo.classPath + "'", parameter);
-            return true;
+            console.printMessage(ERROR, "Field '" + fieldName + "'" + inClass + " does not exist in table '" + tableData.tableInfo.classPath + "'", parameter);
         }
-        // Check column type is same
-        if (!column.field.asType().toString().equals(parameterType)) {
+        // Type mismatch
+        else {
             console.printMessage(ERROR,
-                    "Parameter type '" + parameterType + "' does not match field type '" + column.field.asType().toString() +
-                            "' for column '" + column.columnName + "'", parameter);
-            return true;
+                    "Parameter type '" + parameterType + "'" + inClass + " does not match field type '" + column.field.asType().toString() +
+                            "' for column '" + column.columnName + "' in table '" + tableData.tableInfo.classPath + "'", parameter);
         }
-        return false;
+        return true;
     }
 }
