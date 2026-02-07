@@ -107,15 +107,16 @@ public class PerformanceTest {
                         "Last" + i,
                         "123456" + i,
                         (byte) 0,
-                        "user" + i + "@example.com",
+                        new String[]{"user" + i + "@example.com"},
                         "Address " + i,
                         new Date(System.currentTimeMillis() - ((20 + (i % 40)) * 365 * 24 * 60 * 60 * 1000L)),
                         new Timestamp(System.currentTimeMillis()),
                         true,
                         i % 100,
-                        1000.0 + (i * 10.5)
+                        1000.0 + (i * 10.5),
+                        (Long[]) null
                 );
-                user = easyJdbcUsersRepository.addUser(user);
+                user = easyJdbcUsersRepository.save(user);
 
                 // Insert a device for each user
                 final Device device = new Device(
@@ -227,15 +228,16 @@ public class PerformanceTest {
                     "Last" + i,
                     "123456" + i,
                     (byte) 0,
-                    "user" + i + "@example.com",
+                    new String[]{"user" + i + "@example.com"},
                     "Address " + i,
                     new Date(System.currentTimeMillis() - ((20 + (i % 40)) * 365 * 24 * 60 * 60 * 1000L)),
                     new Timestamp(System.currentTimeMillis()),
                     true,
                     i % 100,
-                    1000.0 + (i * 10.5)
+                    1000.0 + (i * 10.5),
+                    null
             );
-            user = easyJdbcUsersRepository.addUser(user);
+            user = easyJdbcUsersRepository.save(user);
             easyJdbcUsers.add(user);
 
             Device device = new Device(

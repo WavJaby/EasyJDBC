@@ -62,8 +62,8 @@ public class SimplePerformanceTest {
             List<User> users = new ArrayList<>();
             for (int i = 0; i < BATCH_SIZE; i++) {
                 User user = new User(-1, "user" + i, "password", "First" + i, "Last" + i, "123456" + i, (byte) 0,
-                        "user" + i + "@example.com", "Address" + i, null, null, true, 0, 0.0);
-                user = easyJdbcUsersRepository.addUser(user);
+                        new String[]{"user" + i + "@example.com"}, "Address" + i, null, null, true, 0, 0.0, (Long[]) null);
+                user = easyJdbcUsersRepository.save(user);
                 users.add(user);
 
                 // Insert a device for each user with a unique ID
