@@ -1,9 +1,19 @@
 package com.wavjaby.jdbc.processor;
 
 import com.google.auto.service.AutoService;
+import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.Table;
 import com.wavjaby.jdbc.processor.model.*;
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import com.wavjaby.persistence.Column;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Repository;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -27,39 +37,20 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 @SupportedAnnotationTypes("com.wavjaby.jdbc.Table")
 @SuppressWarnings("unused")
 public class TableProcessor extends AbstractProcessor {
-    private final String repoTemplate, initTemplate;
     private Messager console;
     private static Elements elementUtils;
+    private Filer filer;
 
     @SuppressWarnings("unused")
     public TableProcessor() {
-        // Read template
-        String repoTemplate;
-        try (InputStream inputStream = getClass().getResourceAsStream("/RepositoryTemplate.java")) {
-            assert inputStream != null;
-            repoTemplate = getResourceAsString(inputStream);
-        } catch (IOException | AssertionError ignored) {
-            processingEnv.getMessager().printMessage(ERROR, "Could not read template file");
-            repoTemplate = null;
-        }
-        this.repoTemplate = repoTemplate;
-
-
-        String initTemplate;
-        try (InputStream inputStream = getClass().getResourceAsStream("/RepositoryInitTemplate.java")) {
-            assert inputStream != null;
-            initTemplate = getResourceAsString(inputStream);
-        } catch (IOException | AssertionError ignored) {
-            processingEnv.getMessager().printMessage(ERROR, "Could not read template file");
-            initTemplate = null;
-        }
-        this.initTemplate = initTemplate;
     }
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
         elementUtils = processingEnv.getElementUtils();
+        this.console = processingEnv.getMessager();
+        this.filer = processingEnv.getFiler();
     }
 
     public static Elements getElementUtils() {
@@ -74,7 +65,6 @@ public class TableProcessor extends AbstractProcessor {
                 return false;
 
             Map<String, TableData> tableDataMap = new HashMap<>();
-            this.console = processingEnv.getMessager();
             for (TypeElement annotation : annotations) {
                 for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
                     TableData tableData = parseTableData((TypeElement) element);
@@ -105,7 +95,7 @@ public class TableProcessor extends AbstractProcessor {
             if (copyUtilityClasses())
                 return false;
 
-            System.out.println("RepositoryTemplate process done " + tableDataMap.size());
+        System.out.println("RepositoryTemplate process done " + tableDataMap.size());
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -168,10 +158,23 @@ public class TableProcessor extends AbstractProcessor {
     private boolean generateInitFile(Map<String, TableData> tableDataMap, Map<String, TableData> tableDependency) {
         String classPackage = "com.wavjaby.jdbc.util";
         String className = "RepositoryInit";
-        String classPath = classPackage + '.' + className;
-        String template = this.initTemplate;
-        template = template.replace("%CLASS_PACKAGE_NAME%", "package " + classPackage + ';');
-        template = template.replace("%CLASS_NAME%", className);
+
+        FieldSpec logger = FieldSpec.builder(Logger.class, "logger")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($L.class)", LoggerFactory.class, className)
+                .build();
+        FieldSpec jdbc = FieldSpec.builder(JdbcTemplate.class, "jdbc")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .build();
+
+        MethodSpec constructor = MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(JdbcTemplate.class, "jdbc")
+                .addStatement("this.jdbc = jdbc")
+                .build();
+
+        MethodSpec.Builder initSchemeAndTable = MethodSpec.methodBuilder("initSchemeAndTable")
+                .addModifiers(Modifier.PUBLIC);
 
         Set<String> schemaList = new HashSet<>();
         for (TableData tableData : tableDataMap.values()) {
@@ -179,47 +182,61 @@ public class TableProcessor extends AbstractProcessor {
             schemaList.add(tableData.tableInfo.schema);
         }
 
-        StringBuilder builder = new StringBuilder();
         // Create schema init code
-        if (!schemaList.isEmpty()) {
-            builder.append("jdbc.execute(");
-            boolean first = true;
-            for (String schema : schemaList) {
-                if (!first) builder.append("+");
-                first = false;
-
-                builder.append("\n        \"create schema if not exists ").append(schema).append(";\"");
-            }
-            builder.append("\n        );\n");
+        for (String schema : schemaList) {
+            initSchemeAndTable.addStatement("jdbc.execute($S)", "create schema if not exists " + schema + ";");
         }
 
         // Create table create SQL
-        for (TableData tableData : tableDependency.values()) {
+        List<TableData> tables = new ArrayList<>(tableDependency.values());
+        tables.sort((a, b) -> {
+            if (a.tableInfo.isVirtual && !b.tableInfo.isVirtual) return 1;
+            if (!a.tableInfo.isVirtual && b.tableInfo.isVirtual) return -1;
+            return 0;
+        });
+        for (TableData tableData : tables) {
             StringBuilder tableCreateSql = new StringBuilder();
             if (tableData.tableInfo.isVirtual) {
-                if (generateCreateViewSql(tableData, tableCreateSql))
+                if (SqlGenerator.generateCreateViewSql(tableData, tableCreateSql, console))
                     return true;
             } else {
-                if (generateCreateTableSql(tableData, tableCreateSql))
+                if (SqlGenerator.generateCreateTableSql(tableData, tableCreateSql, console))
                     return true;
             }
-            builder.append("\n        jdbc.execute(").append(tableCreateSql).append(");\n");
+            initSchemeAndTable.addStatement("jdbc.execute(\"\"\"\n$L\"\"\")", tableCreateSql);
         }
 
-        builder.append("/*\n");
-        for (TableData tableData : tableDependency.values()) {
-            TableInfo tableInfo = tableData.tableInfo;
-            String tableCreateSql = '"' + Objects.requireNonNullElse(tableInfo.schema, "public") + "\".\"" + tableInfo.name + '"';
-            builder.append(tableCreateSql).append("\n");
-        }
-        builder.append("*/\n");
+        MethodSpec onApplicationEvent = MethodSpec.methodBuilder("onApplicationEvent")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(ParameterSpec.builder(
+                                ApplicationReadyEvent.class, "event")
+                        .addModifiers(Modifier.FINAL)
+                        .build())
+                .addStatement("logger.debug($S)", "Start init scheme and table")
+                .addStatement("initSchemeAndTable()")
+                .addStatement("logger.debug($S)", "Init scheme and table success")
+                .build();
 
-        template = template.replace("%INIT_TABLE%", builder);
+        TypeSpec typeSpec = TypeSpec.classBuilder(className)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Component.class)
+                .addSuperinterface(ParameterizedTypeName.get(
+                        ApplicationListener.class,
+                        ApplicationReadyEvent.class))
+                .addField(logger)
+                .addField(jdbc)
+                .addMethod(constructor)
+                .addMethod(initSchemeAndTable.build())
+                .addMethod(onApplicationEvent)
+                .build();
 
-        try (Writer out = processingEnv.getFiler().createSourceFile(classPath).openWriter()) {
-            out.write(template);
+        try {
+            JavaFile.builder(classPackage, typeSpec)
+                    .build()
+                    .writeTo(filer);
         } catch (IOException e) {
-            console.printMessage(ERROR, "Could not write class: '" + classPath + "'");
+            console.printMessage(ERROR, "Could not write class: '" + classPackage + "." + className + "'");
             return true;
         }
 
@@ -229,32 +246,56 @@ public class TableProcessor extends AbstractProcessor {
     private boolean generateFile(TableData tableData) {
         TableInfo tableInfo = tableData.tableInfo;
 
-        // Create class
-        String template = this.repoTemplate;
-        template = template.replace("%CLASS_PACKAGE_NAME%", tableInfo.repoPackagePath);
-        template = template.replace("%REPOSITORY_IMPL_NAME%", tableInfo.repoClassName);
-        template = template.replace("%INTERFACE_CLASS_PATH%", tableInfo.repoIntClassPath);
-        template = template.replace("%TABLE_DATA_CLASS%", tableInfo.className);
-        template = template.replace("%TABLE_NAME%", tableInfo.name);
-        template = template.replace("%SQL_TABLE_COLUMN_COUNT%", String.valueOf(tableData.tableColumnNames.size()));
+        // Create class Builder
+        ClassName repoClassName = ClassName.get(tableInfo.classPackagePath, tableInfo.repoClassName);
+        ClassName tableDataClass = ClassName.get(tableInfo.classPackagePath, tableInfo.className);
 
-        // Add repository method
-        StringBuilder repoMethodBuilder = new StringBuilder();
-        if (generateRepositoryMethods(tableData, repoMethodBuilder))
-            return true;
+        TypeSpec.Builder typeBuilder = TypeSpec.classBuilder(repoClassName)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Repository.class)
+                .addSuperinterface(tableInfo.repoIntClassElement.asType());
+
+        // Fields
+        typeBuilder.addField(FieldSpec.builder(JdbcTemplate.class, "jdbc")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .build());
+
+        // FastResultSetExtractor field
+        ParameterizedTypeName tableMapperType = ParameterizedTypeName.get(
+                ClassName.get(FastResultSetExtractor.class),
+                tableDataClass);
+        typeBuilder.addField(FieldSpec.builder(tableMapperType, "tableMapper")
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .build());
+
+        // Constructor
+        MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(JdbcTemplate.class, "jdbc")
+                .addStatement("this.jdbc = jdbc");
 
         // Add repository dependency
-        template = generateClassDependencies(tableInfo, tableData, template);
-        template = template.replace("%REPOSITORY_METHODS%", repoMethodBuilder.toString());
+        generateClassDependencies(tableInfo, tableData, typeBuilder, constructorBuilder);
 
-        try (Writer out = processingEnv.getFiler().createSourceFile(tableInfo.repoClassPath).openWriter()) {
-            out.write(template);
-        } catch (IOException e) {
-            console.printMessage(ERROR, "Could not write class: '" + tableInfo.repoClassPath + "'");
+        // Finish constructor
+        constructorBuilder.addStatement("tableMapper = new $T<>($T.class, $L)",
+                FastResultSetExtractor.class,
+                tableDataClass,
+                tableData.tableColumnNames.size());
+
+        typeBuilder.addMethod(constructorBuilder.build());
+
+        // Add repository method
+        if (generateRepositoryMethods(tableData, typeBuilder))
             return true;
-        }
-        return false;
-    }
+
+        try {
+            JavaFile.builder(tableInfo.classPackagePath, typeBuilder.build())
+                    .build()
+                    .writeTo(filer);
+        } catch (IOException e) {
+            console.printMessage(ERROR, "Could not write class: '" + tableInfo.repoClassPath + "'. Error: " + e);
+            return true;
 
     private boolean generateCreateViewSql(TableData tableData, StringBuilder builder) {
         TableInfo tableInfo = tableData.tableInfo;
@@ -425,7 +466,7 @@ public class TableProcessor extends AbstractProcessor {
 
             // Explicit column SQL selection takes highest priority
             if (!method.returnColumnSqlParams.isEmpty()) {
-                if (generateRepositorySearchColumnMethod(method, tableData, repoMethodBuilder))
+                if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
             }
@@ -459,7 +500,7 @@ public class TableProcessor extends AbstractProcessor {
                         continue;
                     } else {
                         // Check existence
-                        if (generateRepositoryCheckMethod(method, tableData, repoMethodBuilder))
+                        if (generateRepositoryCheckMethod(method, tableData, typeBuilder))
                             return true;
                         continue;
                     }
@@ -1067,32 +1108,15 @@ public class TableProcessor extends AbstractProcessor {
         return false;
     }
 
-    private String generateClassDependencies(TableInfo tableInfo, TableData tableData, String template) {
-        StringBuilder importBuilder = new StringBuilder();
-        StringBuilder fieldsBuilder = new StringBuilder();
-        StringBuilder paramBuilder = new StringBuilder();
-        StringBuilder initBuilder = new StringBuilder();
+    private boolean generateClassDependencies(TableInfo tableInfo, TableData tableData, TypeSpec.Builder typeBuilder, MethodSpec.Builder constructorBuilder) {
         // Create field defamation
         for (Map.Entry<String, String> dependency : tableData.getDependencies().entrySet()) {
-            String className = dependency.getKey().substring(dependency.getKey().lastIndexOf('.') + 1);
+            String fullClassName = dependency.getKey();
             String fieldName = dependency.getValue();
 
-            importBuilder.append("import ").append(dependency.getKey()).append(";\n");
             if (fieldName != null) {
-                fieldsBuilder.append("private final ").append(className).append(' ').append(fieldName).append(";\n    ");
-                paramBuilder.append(',').append(className).append(' ').append(fieldName);
-                initBuilder.append("this.").append(fieldName).append(" = ").append(fieldName).append(";\n        ");
-            }
-        }
-        // Add table classpath also
-        importBuilder.append("import ").append(tableInfo.classPath).append(";\n");
+                ClassName className = ClassName.bestGuess(fullClassName);
 
-        template = template.replace("%CLASS_IMPORTS%", importBuilder);
-        template = template.replace("%CLASS_FIELDS%", fieldsBuilder);
-        template = template.replace("%CLASS_FIELDS_PARAMETER%", paramBuilder);
-        template = template.replace("%CLASS_FIELDS_INIT%", initBuilder);
-        return template;
-    }
 
     private boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql) {
         VariableElement field = columnInfo.field;
