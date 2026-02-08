@@ -17,11 +17,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(classes = {
-        AppConfig.class,
-        com.wavjaby.jdbc.util.Snowflake.class,
-        com.wavjaby.jdbc.util.RepositoryInit.class,
-        com.wavjaby.db.UsersRepositoryImpl.class,
-        DeviceRepositoryImpl.class
+        AppConfig.class
 })
 public class SimplePerformanceTest {
     private static final Logger log = LoggerFactory.getLogger(SimplePerformanceTest.class);

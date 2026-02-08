@@ -24,12 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(classes = {
-        TestApplication.class,
-        AppConfig.class,
-        com.wavjaby.jdbc.util.Snowflake.class,
-        com.wavjaby.jdbc.util.RepositoryInit.class,
-        com.wavjaby.db.UsersRepositoryImpl.class,
-        DeviceRepositoryImpl.class
+        AppConfig.class
 })
 public class PerformanceTest {
 

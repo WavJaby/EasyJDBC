@@ -23,12 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 @SpringBootTest(classes = {
-        AppConfig.class,
-        Snowflake.class,
-        UsersRepositoryImpl.class,
-        DeviceRepositoryImpl.class,
-        FriendRepositoryImpl.class,
-        RepositoryInit.class
+        AppConfig.class
 })
 public class TestEasyJDBC {
     @Autowired

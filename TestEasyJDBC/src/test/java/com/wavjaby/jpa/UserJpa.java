@@ -25,6 +25,7 @@ public class UserJpa implements UserDetails {
     private String firstName;
     private String lastName;
     private String phoneNumber;
+    @Column(nullable = false, columnDefinition = "SMALLINT")
     private byte gender;
 
     private String email;
