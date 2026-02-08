@@ -67,6 +67,8 @@ public class ColumnInfo {
         } else
             this.referencedTableClassPath = null;
 
+        boolean nullable = field.getAnnotation(NotNull.class) == null;
+
         boolean isString = false, isArray = false, isEnum = false;
         TypeMirror type = field.asType();
         // Extracts array/list element type; flags array status
@@ -77,7 +79,8 @@ public class ColumnInfo {
                 isArray = true;
         } else if (type instanceof DeclaredType declaredType && declaredType.asElement().toString().equals(List.class.getName())) {
             type = declaredType.getTypeArguments().get(0);
-        }
+        } else if (type instanceof PrimitiveType)
+            nullable = false;
 
         if (type instanceof DeclaredType declaredType) {
             isString = type.toString().equals(String.class.getName());
@@ -89,7 +92,6 @@ public class ColumnInfo {
         this.isEnum = isEnum;
 
         // Get column info
-        boolean nullable = field.getAnnotation(NotNull.class) == null;
         this.isPrimaryKey = field.getAnnotation(Id.class) != null;
         ColumnDefault columnDefault = field.getAnnotation(ColumnDefault.class);
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
@@ -128,9 +130,6 @@ public class ColumnInfo {
         }
 
         if (isPrimaryKey || defaultValue != null)
-            nullable = false;
-        
-        if (type instanceof PrimitiveType)
             nullable = false;
 
         this.isForeignKey = this.joinColumn != null;
@@ -207,10 +206,6 @@ public class ColumnInfo {
         }
         this.referencedTableData = refrenceTableData;
         this.referencedColumnInfo = referencedColumnInfo;
-
-        // Prevent adding dependency to itself, if Repo interface is in the same class
-        if (!referencedColumnInfo.tableInfo.repoIntClassPath.startsWith(referencedColumnInfo.tableInfo.classPath))
-            tableData.addDependency(referencedColumnInfo.tableInfo.repoIntClassPath);
 
         return false;
     }

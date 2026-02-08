@@ -214,7 +214,7 @@ public class MethodInfo {
             return false;
         }
 
-        console.printMessage(ERROR, "Repository '" + tableData.tableInfo.repoIntClassPath +
+        console.printMessage(ERROR, "Repository '" + tableData.tableInfo.repoIntPackagePath +
                 "' for table class '" + tableData.tableInfo.classPath +
                 "', method: '" + method.toString() + "' return type '" + returnTypeMirror + "' is not acceptable", method);
         return true;
@@ -245,7 +245,7 @@ public class MethodInfo {
     }
 
     private static boolean parseSqlParam(String sql, List<QueryParamInfo> params) {
-        String returnColumnSql = sql.replace("\"", "\\\"").replaceAll(" *\r?\n *", " ");
+        String returnColumnSql = sql.replaceAll(" *\r?\n *", " ");
         Matcher matcher = paramPattern.matcher(returnColumnSql);
         int index = 0;
         while (matcher.find()) {

@@ -149,7 +149,7 @@ public class TableData {
                     continue;
 
                 ColumnInfo otherReferencedColumn = target.getReferencedColumnInfo();
-                if (referencedColumn.tableInfo.fullname.equals(otherReferencedColumn.tableInfo.fullname) &&
+                if (referencedColumn.tableInfo.tableFullname.equals(otherReferencedColumn.tableInfo.tableFullname) &&
                         referencedColumn.columnName.equals(otherReferencedColumn.columnName))
                     addToGroup = false;
             }
