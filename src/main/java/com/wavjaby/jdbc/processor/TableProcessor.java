@@ -3,35 +3,32 @@ package com.wavjaby.jdbc.processor;
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.Table;
-import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
-import com.wavjaby.jdbc.processor.util.SqlGenerator;
 import com.wavjaby.jdbc.processor.model.*;
+import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
+import com.wavjaby.jdbc.processor.util.ProcessorUtil;
+import com.wavjaby.jdbc.processor.util.SqlGenerator;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
-import com.wavjaby.persistence.Column;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.*;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.*;
 import javax.lang.model.util.Elements;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.Writer;
 import java.util.*;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClassElement;
-import static com.wavjaby.jdbc.processor.util.ProcessorUtil.getResourceAsString;
-import static com.wavjaby.jdbc.processor.util.SqlGenerator.quoteColumnName;
-import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 
@@ -95,10 +92,10 @@ public class TableProcessor extends AbstractProcessor {
             if (generateInitFile(tableDataMap, tableDependency))
                 return false;
 
-            if (copyUtilityClasses())
+            if (ProcessorUtil.copyUtilityClasses(processingEnv, console))
                 return false;
 
-        System.out.println("RepositoryTemplate process done " + tableDataMap.size());
+            System.out.println("RepositoryTemplate process done " + tableDataMap.size());
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -304,7 +301,6 @@ public class TableProcessor extends AbstractProcessor {
     }
 
 
-
     private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
         for (MethodInfo method : tableData.interfaceMethodInfo) {
@@ -405,9 +401,6 @@ public class TableProcessor extends AbstractProcessor {
         }
         return false;
     }
-
-
-
 
 
     private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
@@ -595,9 +588,6 @@ public class TableProcessor extends AbstractProcessor {
     }
 
 
-
-
-
     private boolean generateRepositoryDeleteMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
@@ -693,9 +683,6 @@ public class TableProcessor extends AbstractProcessor {
         }
         return false;
     }
-
-
-
 
 
 }
