@@ -3,6 +3,7 @@ package com.wavjaby.jdbc.processor;
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
 import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import com.wavjaby.persistence.Column;
@@ -461,6 +462,9 @@ public class TableProcessor extends AbstractProcessor {
     }
 
     private boolean generateRepositoryMethods(TableData tableData, StringBuilder repoMethodBuilder) {
+
+
+    private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
         for (MethodInfo method : tableData.interfaceMethodInfo) {
 
@@ -472,7 +476,7 @@ public class TableProcessor extends AbstractProcessor {
             }
 
             if (method.batchInsert) {
-                if (generateRepositoryInsertMethod(method, tableData, repoMethodBuilder))
+                if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
             }
@@ -481,7 +485,7 @@ public class TableProcessor extends AbstractProcessor {
             if (method.delete) {
                 TypeKind kind = method.returnTypeMirror.getKind();
                 if (kind == TypeKind.BOOLEAN || kind == TypeKind.INT || kind == TypeKind.VOID) {
-                    if (generateRepositoryDeleteMethod(method, tableData, repoMethodBuilder))
+                    if (generateRepositoryDeleteMethod(method, tableData, typeBuilder))
                         return true;
                     continue;
                 }
@@ -495,7 +499,7 @@ public class TableProcessor extends AbstractProcessor {
                 if (kind == TypeKind.BOOLEAN) {
                     if (method.modifyRow) {
                         // Update and check success
-                        if (generateRepositoryUpdateMethod(method, tableData, repoMethodBuilder, true))
+                        if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, true))
                             return true;
                         continue;
                     } else {
@@ -506,7 +510,7 @@ public class TableProcessor extends AbstractProcessor {
                     }
                 } else if (kind == TypeKind.INT) {
                     if (method.count) {
-                        if (generateRepositoryCountMethod(method, tableData, repoMethodBuilder))
+                        if (generateRepositoryCountMethod(method, tableData, typeBuilder))
                             return true;
                         continue;
                     }
@@ -519,7 +523,7 @@ public class TableProcessor extends AbstractProcessor {
             // Void return type
             if (method.returnTypeMirror instanceof NoType) {
                 if (method.modifyRow) {
-                    if (generateRepositoryUpdateMethod(method, tableData, repoMethodBuilder, false))
+                    if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, false))
                         return true;
                     continue;
                 }
@@ -532,25 +536,25 @@ public class TableProcessor extends AbstractProcessor {
             if (method.returnSelfTable) {
                 // Update function
                 if (method.modifyRow) {
-                    if (generateRepositoryUpdateMethod(method, tableData, repoMethodBuilder, false))
+                    if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, false))
                         return true;
                     continue;
                 }
                 // Insert function
                 else if (method.insertMethod) {
-                    if (generateRepositoryInsertMethod(method, tableData, repoMethodBuilder))
+                    if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
                         return true;
                     continue;
                 }
                 // Query function
-                else if (generateRepositorySearchMethod(method, tableData, repoMethodBuilder))
+                else if (generateRepositorySearchMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
             }
 
             // Return a single column
             if (method.returnColumn != null) {
-                if (generateRepositorySearchColumnMethod(method, tableData, repoMethodBuilder))
+                if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
             }
@@ -561,197 +565,20 @@ public class TableProcessor extends AbstractProcessor {
         return false;
     }
 
-    /**
-     * Constructs SQL query fragments and corresponding parameter arguments based on method parameters
-     * and additional query constraints.
-     *
-     * @param params           List of method parameter information containing column mappings and metadata
-     * @param methodInfo       Method metadata containing query SQL (can be null)
-     * @param insert           true if generating INSERT clause for INSERT operation, false for UPDATE or WHERE clause
-     * @param update           true if generating SET clause for UPDATE operation, false for WHERE clause
-     * @param prefix           SQL prefix to prepend (e.g., " WHERE ", " SET "), can be null
-     * @param conjunction      SQL conjunction operator between parameters (e.g., " AND ", ",")
-     * @param tableConstructor true if formatting arguments for table constructor, false for prepared statement
-     * @param tableData        Table metadata used for dependency management and column information
-     * @return Array containing two StringBuilder objects: [0] = query fragment, [1] = arguments list
-     */
-    private StringBuilder[] getQueryAndArgs(List<MethodParamInfo> params, MethodInfo methodInfo, boolean insert, boolean update, String prefix, String conjunction, boolean tableConstructor, TableData tableData) {
-        StringBuilder queryBuilder = new StringBuilder();
-        StringBuilder argsBuilder = new StringBuilder();
 
-        if (!tableConstructor && !params.isEmpty() || methodInfo != null && methodInfo.querySql != null) {
-            if (prefix != null) queryBuilder.append(prefix);
-        }
-        if (!tableConstructor && !params.isEmpty()) {
-            argsBuilder.append(',');
-        }
 
-        if (insert)
-            queryBuilder.append("(");
 
-        int tempVarCount = 0;
 
-        int conditionCount = -1;
-        for (MethodParamInfo param : params) {
-            if (param.columns.isEmpty()) continue;
-            if (++conditionCount != 0) queryBuilder.append(conjunction);
-
-            // Query with multiple columns
-            if (!insert && !update && param.columns.size() > 1)
-                queryBuilder.append("(");
-            int j = -1;
-            for (ColumnInfo column : param.columns) {
-                if (param.dataClass && column.idGenerator != null)
-                    continue;
-
-                if (insert || update) {
-                    if (++j != 0) queryBuilder.append(',');
-                } else {
-                    if (++j != 0) queryBuilder.append(" or ");
-                }
-
-                // Query where with ignore case
-                if (!update && param.ignoreCase) {
-                    queryBuilder.append("LOWER(");
-                    quoteColumnName(queryBuilder, column.columnName);
-                    queryBuilder.append(") ").append(param.whereOperation).append(" LOWER(?)");
-                } else if (insert)
-                    quoteColumnName(queryBuilder, column.columnName);
-//                else
-//                    quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
-                else {
-                    if (!update && column.nullable) {
-                        quoteColumnName(queryBuilder, column.columnName);
-                        queryBuilder.append(" IS NOT DISTINCT FROM ?");
-                    } else {
-                        quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
-                    }
-                }
-
-                String argName = param.paramName;
-                // Get field if using data class
-                if (param.dataClass) {
-                    argName += '.' + column.field.getSimpleName().toString();
-                    if (param.isRecord) argName += "()";
-                }
-
-                if (conditionCount + j != 0) argsBuilder.append(',');
-                if (tableConstructor) {
-                    argsBuilder.append(argName);
-                } else {
-                    if (column.isArray) {
-                        // If enum array exist
-                        if (column.isEnum) {
-                            argName = "var" + tempVarCount;
-                            tempVarCount++;
-                        }
-
-                        tableData.addDependency("org.springframework.jdbc.core.SqlParameterValue", null);
-                        tableData.addDependency("static java.sql.Types.ARRAY", null);
-                        argsBuilder.append("new SqlParameterValue(ARRAY,").append(argName).append(")");
-                    } else if (column.isEnum) {
-                        if (column.nullable)
-                            argsBuilder.append(argName).append("==null?null:");
-                        argsBuilder.append(argName).append(".name()");
-                    } else {
-                        argsBuilder.append(argName);
-                    }
-                }
-            }
-            if (!insert && !update && param.columns.size() > 1)
-                queryBuilder.append(")");
-        }
-        if (insert)
-            queryBuilder.append(')');
-
-        // Appends query SQL and parameters if present
-        if (methodInfo != null && methodInfo.querySql != null) {
-            if (conditionCount > -1)
-                queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
-
-            for (QueryParamInfo sqlParam : methodInfo.querySqlParams) {
-                queryBuilder.append(sqlParam.sqlPart);
-                if (sqlParam.paramName == null)
-                    continue;
-                queryBuilder.append('?');
-
-                MethodParamInfo methodParam = sqlParam.getMethodParamInfo();
-
-                if (++conditionCount != 0)
-                    argsBuilder.append(',');
-                if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
-                    tableData.addDependency("org.springframework.jdbc.core.SqlParameterValue", null);
-                    tableData.addDependency("static java.sql.Types.ARRAY", null);
-                    argsBuilder.append("new SqlParameterValue(ARRAY,").append(sqlParam.paramName).append(")");
-                } else {
-                    argsBuilder.append(sqlParam.paramName);
-                }
-
-            }
-        }
-        return new StringBuilder[]{queryBuilder, argsBuilder};
-    }
-
-    private StringBuilder[] updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, MethodInfo methodInfo, TableData tableData) {
-        StringBuilder[] where = getQueryAndArgs(whereColumns, methodInfo, false, false, " where ", " and ", false, tableData);
-        StringBuilder[] values = getQueryAndArgs(updateColumns, null, false, true, " set ", ",", false, tableData);
-
-        values[0].append(where[0]);
-        values[1].append(where[1]);
-
-        return new StringBuilder[]{values[0], values[1]};
-    }
-
-    private StringBuilder getClassDefinition(MethodInfo methodInfo) {
-        return getClassDefinition(methodInfo.returnTypeName, methodInfo);
-    }
-
-    private StringBuilder getClassDefinition(String returnType, MethodInfo methodInfo) {
-
-        // Build method definition
-        StringBuilder builder = new StringBuilder();
-        builder.append("\n    public ");
-
-        if (methodInfo.returnList) builder.append("List<").append(methodInfo.getReturnListType()).append(">");
-        else builder.append(returnType);
-
-        builder.append(' ').append(methodInfo.methodName).append('(');
-        // Add method param
-        for (int i = 0; i < methodInfo.params.size(); ++i) {
-            if (i != 0) builder.append(", ");
-            MethodParamInfo param = methodInfo.params.get(i);
-            String typeStr = param.dataClass
-                    ? ((DeclaredType) param.parameter.asType()).asElement().getSimpleName().toString()
-                    : param.paramTypeName;
-
-            // Add param to builder
-            if (methodInfo.batchInsert)
-                builder.append("List<").append(typeStr).append('>');
-            else
-                builder.append(typeStr);
-
-            builder.append(' ').append(param.paramName);
-
-            // Modify the param name to `NAME_`
-            if (methodInfo.batchInsert)
-                builder.append('_');
-        }
-        builder.append(") {\n");
-        return builder;
-    }
-
-    private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
+    private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         if (methodInfo.returnList) {
             console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for insert method", methodInfo.method);
             return true;
         }
 
         boolean returnInt = methodInfo.returnTypeMirror.getKind() == TypeKind.INT;
-
         TableInfo tableInfo = tableData.tableInfo;
-//        List<? extends VariableElement> parameters = methodInfo.method.getParameters();
-        StringBuilder methodDef = getClassDefinition(methodInfo);
-        repoMethodBuilder.append(methodDef);
+
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
         List<MethodParamInfo> infos = new ArrayList<>(methodInfo.params);
         int i = -1;
@@ -760,207 +587,169 @@ public class TableProcessor extends AbstractProcessor {
             ++i;
             if (info.idGenerator == null) continue;
             String generator = tableData.getDependencyFieldName(info.idGenerator.toString());
-            repoMethodBuilder.append("        ").append("long id").append(i).append(" = ").append(generator).append(".nextId();\n");
+            methodBuilder.addStatement("long id$L = $L.nextId()", i, generator);
             infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null, false));
         }
 
-        checkAndConvertEnumToStringArray(repoMethodBuilder, infos);
+        JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodBuilder, infos);
 
-        StringBuilder[] values = getQueryAndArgs(infos, null, true, false, null, ",", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.getQueryAndArgs(infos, null, true, false, null, ",", false, tableData);
 
         // Append variable values
-        values[0].append(" values (");
+        values.query().append(" values (");
         boolean first = true;
         for (MethodParamInfo info : methodInfo.params) {
             for (ColumnInfo column : info.columns) {
-                if (!first) values[0].append(',');
-                values[0].append('?');
+                if (!first) values.query().append(',');
+                values.query().append('?');
                 first = false;
             }
         }
-        values[0].append(')');
+        values.query().append(')');
 
 
         if (methodInfo.batchInsert) {
-            tableData.addDependency("java.util.ArrayList", null);
-            tableData.addDependency("java.util.Arrays", null);
             MethodParamInfo param = methodInfo.params.get(0);
             String typeStr = ((DeclaredType) param.parameter.asType()).asElement().getSimpleName().toString();
-            repoMethodBuilder.append("        List<Object[]> batchValues = new ArrayList<>(").append(param.paramName).append("_.size());\n");
-            repoMethodBuilder.append("        for (").append(typeStr).append(' ').append(param.paramName).append(":").append(param.paramName).append("_){\n");
-            repoMethodBuilder.append("            batchValues.add(new Object[]{").append(values[1], 1, values[1].length()).append("});\n");
-            repoMethodBuilder.append("        }\n");
 
-            repoMethodBuilder.append("        int[] result = jdbc.batchUpdate(\"insert into ").append(tableInfo.fullname)
-                    .append(values[0]).append("\",batchValues);\n");
+            methodBuilder.addStatement("$T<Object[]> batchValues = new $T<>($L_.size())",
+                    List.class, ArrayList.class, param.paramName);
+            methodBuilder.beginControlFlow("for ($L $L : $L_)", typeStr, param.paramName, param.paramName);
+            methodBuilder.addStatement("batchValues.add(new Object[]{$L})", CodeBlock.join(values.args(), ", "));
+            methodBuilder.endControlFlow();
+
+            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "insert into " + tableInfo.tableFullname + values.query());
 
             if (returnInt) {
-                // Sum result count
-                repoMethodBuilder.append("        return Arrays.stream(result).sum();\n");
+                methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
             }
         } else {
-            repoMethodBuilder.append("        ");
-            if (returnInt) repoMethodBuilder.append("return ");
-            repoMethodBuilder.append("jdbc.update(\"insert into ").append(tableInfo.fullname)
-                    .append(values[0]).append('"').append(values[1]).append(");\n");
-        }
+            String sql = "insert into " + tableInfo.tableFullname + values.query();
 
-        // Create return
-        if (methodInfo.returnSelfTable) {
-            values = getQueryAndArgs(infos, null, false, true, null, ",", true, tableData);
-            repoMethodBuilder.append("        return new ").append(tableInfo.className).append('(')
-                    .append(values[1]).append(");\n");
-        }
-
-        repoMethodBuilder.append("    }\n");
-        return false;
-    }
-
-    private static void checkAndConvertEnumToStringArray(StringBuilder repoMethodBuilder, List<MethodParamInfo> infos) {
-        // Create temp var if enum array exist
-        int tempVarCount = 0;
-        for (MethodParamInfo param : infos) {
-            for (ColumnInfo column : param.columns) {
-                if (param.dataClass && column.idGenerator != null)
-                    continue;
-
-                String argName = param.paramName;
-                // Get field if using data class
-                if (param.dataClass) {
-                    argName += '.' + column.field.getSimpleName().toString();
-                    if (param.isRecord) argName += "()";
+            if (methodInfo.returnSelfTable) {
+                if (values.args().isEmpty()) {
+                    methodBuilder.addStatement("jdbc.update($S)", sql);
+                } else {
+                    methodBuilder.addStatement("jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
                 }
 
-                if (column.isArray && column.isEnum) {
-                    repoMethodBuilder.append("        ").append("String[] var").append(tempVarCount).append(" = new String[").append(argName).append(".length];\n");
-                    repoMethodBuilder.append("        for (int i = 0; i < ").append(argName).append(".length; i++)\n");
-                    repoMethodBuilder.append("            var").append(tempVarCount).append("[i] = ").append(argName).append("[i].name();\n");
+                JdbcCodeGenerator.QueryAndArgs returnValues = JdbcCodeGenerator.getQueryAndArgs(infos, null, false, true, null, ",", true, tableData);
 
-                    tempVarCount++;
+                methodBuilder.addStatement("return new $T($L)", ClassName.bestGuess(tableInfo.className), CodeBlock.join(returnValues.args(), ", "));
+            } else {
+                if (returnInt) {
+                    if (values.args().isEmpty()) {
+                        methodBuilder.addStatement("return jdbc.update($S)", sql);
+                    } else {
+                        methodBuilder.addStatement("return jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
+                    }
+                } else {
+                    if (values.args().isEmpty()) {
+                        methodBuilder.addStatement("jdbc.update($S)", sql);
+                    } else {
+                        methodBuilder.addStatement("jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
+                    }
                 }
             }
         }
-    }
 
-    private boolean generateRepositoryCheckMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
-        TableInfo tableInfo = tableData.tableInfo;
-        // Build method definition
-        List<? extends VariableElement> parameters = methodInfo.method.getParameters();
-        StringBuilder methodDef = getClassDefinition("boolean", methodInfo);
-        repoMethodBuilder.append(methodDef);
-
-
-        // Count query result
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
-        repoMethodBuilder.append("        return jdbc.queryForObject(\"select count(*) from ").append(tableInfo.fullname)
-                .append(queryWithArgs[0]).append("\"")
-                .append(",Integer.class").append(queryWithArgs[1]).append(") > 0;\n");
-        repoMethodBuilder.append("    }\n");
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
-    private boolean generateRepositoryCountMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
+
+    private boolean generateRepositoryCheckMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
-        // Build method definition
-        List<? extends VariableElement> parameters = methodInfo.method.getParameters();
-        StringBuilder methodDef = getClassDefinition("int", methodInfo);
-        repoMethodBuilder.append(methodDef);
 
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        // Count query result
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
-        repoMethodBuilder.append("        return jdbc.queryForObject(\"select count(*) from ").append(tableInfo.fullname)
-                .append(queryWithArgs[0]).append("\"")
-                .append(",Integer.class").append(queryWithArgs[1]).append(");\n");
-        repoMethodBuilder.append("    }\n");
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+
+        String sql = "select count(*) from " + tableInfo.tableFullname + queryWithArgs.query();
+
+        JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, true);
+
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
-    private boolean generateRepositorySearchColumnMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
+    private boolean generateRepositoryCountMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
-        // Build method definition
-        String returnTypeStr = methodInfo.returnTypeName;
-        StringBuilder methodDef = getClassDefinition(methodInfo);
-        repoMethodBuilder.append(methodDef);
+
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
+
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+
+        String sql = "select count(*) from " + tableInfo.tableFullname + queryWithArgs.query();
+
+        JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, false);
+
+        typeBuilder.addMethod(methodBuilder.build());
+        return false;
+    }
+
+    private boolean generateRepositorySearchColumnMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+        TableInfo tableInfo = tableData.tableInfo;
+
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
         StringBuilder columnQuery = new StringBuilder();
-        StringBuilder columnArgs = new StringBuilder();
+        List<CodeBlock> columnArgs = new ArrayList<>();
         if (!methodInfo.returnColumnSqlParams.isEmpty()) {
-            boolean first = true;
             for (QueryParamInfo param : methodInfo.returnColumnSqlParams) {
                 columnQuery.append(param.sqlPart);
                 if (param.paramName != null) {
                     columnQuery.append('?');
-                    if (!first) columnArgs.append(',');
-                    first = false;
-
                     MethodParamInfo methodParam = param.getMethodParamInfo();
                     if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
-                        tableData.addDependency("org.springframework.jdbc.core.SqlParameterValue", null);
-                        tableData.addDependency("static java.sql.Types.ARRAY", null);
-                        columnArgs.append("new SqlParameterValue(ARRAY,").append(param.paramName).append(")");
+                        columnArgs.add(CodeBlock.of("new $T($T.ARRAY, $L)",
+                                org.springframework.jdbc.core.SqlParameterValue.class,
+                                java.sql.Types.class,
+                                param.paramName
+                        ));
                     } else {
-                        columnArgs.append(param.paramName);
+                        columnArgs.add(CodeBlock.of("$L", param.paramName));
                     }
                 }
             }
         } else {
-            quoteColumnName(columnQuery, methodInfo.returnColumn.columnName);
+            SqlGenerator.quoteColumnName(columnQuery, methodInfo.returnColumn.columnName);
         }
 
-        // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
 
-        // Add extra args
         if (!columnArgs.isEmpty()) {
-            if (!queryWithArgs[1].isEmpty()) queryWithArgs[1].append(',');
-            queryWithArgs[1].append(columnArgs);
+            queryWithArgs.args().addAll(columnArgs);
         }
 
+        String sql = "select " + columnQuery + " from " + tableInfo.tableFullname + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
-        if (methodInfo.returnList)
-            repoMethodBuilder.append("        return");
-        else
-            repoMethodBuilder.append("        List<").append(methodInfo.getReturnListType()).append("> result =");
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), false);
 
-        repoMethodBuilder.append(" jdbc.queryForList(\"select ")
-                .append(columnQuery).append(" from ").append(tableInfo.fullname)
-                .append(queryWithArgs[0]).append(sqlResultModifier(methodInfo)).append("\"")
-                .append(',').append(returnTypeStr).append(".class").append(queryWithArgs[1]).append(");\n");
-
-        if (!methodInfo.returnList)
-            repoMethodBuilder.append("        return result.isEmpty() ? null : result.get(0);\n");
-        repoMethodBuilder.append("    }\n");
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
-    private boolean generateRepositorySearchMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
+    private boolean generateRepositorySearchMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
-        // Build method definition
-        String returnTypeStr = tableInfo.className;
-        StringBuilder methodDef = getClassDefinition(methodInfo);
-        repoMethodBuilder.append(methodDef);
 
-        // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
-        if (methodInfo.returnList)
-            repoMethodBuilder.append("        return");
-        else
-            repoMethodBuilder.append("        List<").append(methodInfo.getReturnListType()).append("> result =");
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
+
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
 
         StringBuilder columnQuery = new StringBuilder();
+        boolean first = true;
         for (String name : tableData.tableColumnNames) {
-            if (!columnQuery.isEmpty()) columnQuery.append(',');
-            quoteColumnName(columnQuery, name);
+            if (!first) columnQuery.append(',');
+            first = false;
+            SqlGenerator.quoteColumnName(columnQuery, name);
         }
 
-        repoMethodBuilder.append(" jdbc.query(\"select ").append(columnQuery).append(" from ").append(tableInfo.fullname)
-                .append(queryWithArgs[0]).append(sqlResultModifier(methodInfo)).append("\"")
-                .append(",tableMapper").append(queryWithArgs[1]).append(");\n");
+        String sql = "select " + columnQuery + " from " + tableInfo.tableFullname + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
-        if (!methodInfo.returnList)
-            repoMethodBuilder.append("        return result.isEmpty() ? null : result.get(0);\n");
-        repoMethodBuilder.append("    }\n");
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), true);
+
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
@@ -980,51 +769,33 @@ public class TableProcessor extends AbstractProcessor {
         return builder;
     }
 
-    private boolean generateRepositoryDeleteMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder) {
+
+
+    private boolean generateRepositoryDeleteMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
-        TypeKind returnType = methodInfo.returnTypeMirror.getKind();
 
-        String returnTypeStr;
-        if (returnType == TypeKind.BOOLEAN) {
-            returnTypeStr = "boolean";
-        } else if (returnType == TypeKind.INT) {
-            returnTypeStr = "int";
-        } else if (returnType == TypeKind.VOID) {
-            returnTypeStr = "void";
-        } else {
-            console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for delete method", methodInfo.method);
-            return true;
-        }
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
 
-        List<? extends VariableElement> parameters = methodInfo.method.getParameters();
-        StringBuilder methodDef = getClassDefinition(returnTypeStr, methodInfo);
-        repoMethodBuilder.append(methodDef);
+        String sql = "delete from " + tableInfo.tableFullname + queryWithArgs.query();
 
-        // Build method body, SQL query part
-        StringBuilder[] queryWithArgs = getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
-        if (returnType != TypeKind.VOID) repoMethodBuilder.append("        return");
-        else repoMethodBuilder.append("        ");
+        JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, queryWithArgs.args(), methodInfo.returnTypeMirror);
 
-        repoMethodBuilder.append(" jdbc.update(\"delete from ").append(tableInfo.fullname)
-                .append(queryWithArgs[0]).append("\"").append(queryWithArgs[1]).append(")")
-                .append(returnType == TypeKind.BOOLEAN ? " > 0;\n" : ";\n");
-
-        repoMethodBuilder.append("    }\n");
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
-    private boolean generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, StringBuilder repoMethodBuilder, boolean checkSuccess) {
+    private boolean generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) {
         if (methodInfo.returnList) {
             console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for update method", methodInfo.method);
             return true;
         }
 
         TableInfo tableInfo = tableData.tableInfo;
-        // Build method definition
-        repoMethodBuilder.append(getClassDefinition(methodInfo));
 
-        // Split param type
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
+
         List<MethodParamInfo> whereColumns = new ArrayList<>();
         List<MethodParamInfo> updateColumns = new ArrayList<>();
         for (MethodParamInfo param : methodInfo.params) {
@@ -1036,75 +807,44 @@ public class TableProcessor extends AbstractProcessor {
                     console.printMessage(ERROR, "Multiple column for value", param.parameter);
                     return true;
                 }
-                if (param.dataClass)
-                    tableData.addDependency(param.parameter.asType().toString(), null);
                 updateColumns.add(param);
             }
         }
-//        // Use value from record class
-//        if (methodInfo.selfTableParameter != null) {
-//            for (ColumnInfo info : tableData.tableFields.values()) {
-//                if (info.isPrimaryKey || info.column != null && info.column.unique())
-//                    continue;
-//                updateColumns.add(new MethodParamInfo(methodInfo.selfTableParameter, info));
-//            }
-//        }
 
-        checkAndConvertEnumToStringArray(repoMethodBuilder, methodInfo.params);
+        JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodBuilder, methodInfo.params);
 
-        // Build method body, SQL query part
-        StringBuilder[] update = updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
+        JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
+
+        String sql = "update " + tableInfo.tableFullname + update.query();
+
         if (methodInfo.returnSelfTable) {
-            // Update query value if it will be modified
-//            for (int i = 0; i < whereColumns.size(); i++) {
-//                MethodParamInfo where = whereColumns.get(i);
-//                MethodParamInfo modified = null;
-//                for (ColumnInfo whereColumn : where.columns) {
-//                    // Find column is modified
-//                    for (MethodParamInfo value : updateColumns) {
-//                        for (ColumnInfo updatedColumn : value.columns) {
-//                            if (updatedColumn.columnName.equals(whereColumn.columnName)) {
-//                                modified = value;
-//                                break;
-//                            }
-//                        }
-//                        if (modified != null)
-//                            break;
-//                    }
-//                    if (modified != null)
-//                        whereColumns.set(i, modified);
-//                }
-//            }
+            if (update.args().isEmpty())
+                methodBuilder.beginControlFlow("if (jdbc.update($S) == 1)", sql);
+            else
+                methodBuilder.beginControlFlow("if (jdbc.update($S, $L) == 1)", sql, CodeBlock.join(update.args(), ", "));
 
-            // Update data
-            repoMethodBuilder.append("        if (jdbc.update(\"update ").append(tableInfo.fullname)
-                    .append(update[0]).append("\"")
-                    .append(update[1]).append(") == 1)\n");
-
-            // Update query values
-            StringBuilder[] where = getQueryAndArgs(whereColumns, null, false, false, " where ", " and ", false, tableData);
+            JdbcCodeGenerator.QueryAndArgs where = JdbcCodeGenerator.getQueryAndArgs(whereColumns, null, false, false, " where ", " and ", false, tableData);
 
             StringBuilder columnQuery = new StringBuilder();
+            boolean first = true;
             for (String name : tableData.tableColumnNames) {
-                if (!columnQuery.isEmpty()) columnQuery.append(',');
-                quoteColumnName(columnQuery, name);
+                if (!first) columnQuery.append(',');
+                first = false;
+                SqlGenerator.quoteColumnName(columnQuery, name);
             }
 
-            repoMethodBuilder.append("            return jdbc.query(\"select ").append(columnQuery)
-                    .append(" from ").append(tableInfo.fullname)
-                    .append(where[0]).append("\",tableMapper").append(where[1]).append(')')
-                    .append(methodInfo.returnList ? ";\n" : ".get(0);\n");
-            repoMethodBuilder.append("        return null;\n");
-        } else {
-            if (checkSuccess) repoMethodBuilder.append("        return ");
-            else repoMethodBuilder.append("        ");
+            String selectSql = "select " + columnQuery + " from " + tableInfo.tableFullname + where.query();
 
-            repoMethodBuilder.append("jdbc.update(\"update ").append(tableInfo.fullname)
-                    .append(update[0]).append("\"")
-                    .append(update[1]).append(')')
-                    .append(checkSuccess ? " < 1;\n" : ";\n");
+            JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), true);
+
+            methodBuilder.endControlFlow();
+            methodBuilder.addStatement("return null");
+
+        } else {
+            JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, update.args(), checkSuccess ? elementUtils.getTypeElement("java.lang.Boolean").asType() : methodInfo.returnTypeMirror);
         }
-        repoMethodBuilder.append("    }\n");
+
+        typeBuilder.addMethod(methodBuilder.build());
         return false;
     }
 
