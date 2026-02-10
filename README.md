@@ -32,7 +32,7 @@ Based on comprehensive performance tests comparing EasyJDBC with JPA:
 | **Dataset**     | 100,000 User + Device records                       |
 | **Iterations**  | 10 iterations average                               |
 | **Query**       | query with 400 iterations (with JPA FetchType.LAZY) |
-| **Database**    | H2 in-memory                                        |
+| **Database**    | H2 in-memory (PostgreSQL Mode)                     |
 | **Environment** | Spring Boot 3.5.3, Java 17                          |
 
 ### Performance Test Results
@@ -95,9 +95,10 @@ public record User(
         String username,
         String password,
 
-        String email,
+        String[] email,
         Timestamp registrationDate,
-        boolean active
+        boolean active,
+        Long[] deviceIds
 ) {
 }
 ```
@@ -116,7 +117,7 @@ public interface UsersRepository extends UserDetailsService {
 
     /**
      * Spring Security UserDetailsService
-     * Match with username or email.
+     * Match with username or any email in the array.
      */
     @Override
     User loadUserByUsername(@Where({"username", "email"}) String username);
@@ -177,8 +178,10 @@ public class UserService {
                 username,
                 password,
                 null, null, null,
+                null,
                 new Timestamp(System.currentTimeMillis()),
-                true
+                true,
+                null
         );
         return usersRepository.addUser(newUser);
     }
@@ -314,23 +317,31 @@ public record DeviceSummary(
 
 ### Database Configuration
 
-EasyJDBC has been tested and verified to work with H2 database. Here's the recommended configuration:
+EasyJDBC has been tested on H2 (PostgreSQL Mode) and verified to work with PostgreSQL in production environments.
+
+### H2 Configuration (PostgreSQL Mode)
 
 ```yaml
 # application.yml
 spring:
   datasource:
-    url: jdbc:h2:mem:testdb
-    username: User
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DATABASE_TO_UPPER=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
     password: ""
     driver-class-name: org.h2.Driver
-  h2:
-    console:
-      enabled: true  # Enable H2 console for development
 ```
 
-**Note**: This library has only been tested with the H2 database. While it may work with other JDBC-compatible
-databases, H2 is the only officially supported and tested database at this time.
+### PostgreSQL Configuration
+
+```yaml
+# application.yml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/yourdb
+    username: youruser
+    password: yourpassword
+    driver-class-name: org.postgresql.Driver
+```
 
 ## Testing
 
@@ -344,12 +355,15 @@ EasyJDBC includes comprehensive performance tests. Run them with:
 
 - **Java**: 17 or higher
 - **Spring Boot**: 3.0 or higher
-- **Database**: H2 database (officially tested and supported)
+- **Database**: H2 (PostgreSQL Mode) or PostgreSQL 12+
 - **Build Tool**: Gradle with annotation processing support
 
 **Database Compatibility**:
-While EasyJDBC may work with other JDBC-compatible databases, it has only been thoroughly tested with H2 database.
-Support for other databases is not guaranteed.
+EasyJDBC is primarily developed and tested using PostgreSQL syntax. It is verified to work with:
+- **H2 Database** (configured with `MODE=PostgreSQL`)
+- **PostgreSQL Server** (12 or higher)
+
+While it uses standard JDBC, features like array types and specific SQL generation are optimized for PostgreSQL compatibility.
 
 ## EasyJDBC vs JPA
 

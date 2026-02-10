@@ -20,7 +20,7 @@ repositories {
 
 dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:3.5.7"))
-    implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
     
     compileOnly("com.google.code.findbugs:jsr305:3.0.2")
 
