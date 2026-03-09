@@ -9,7 +9,6 @@ import java.util.List;
 public interface DeviceRepository {
     Device addDevice(Device newRow);
 
-    @BatchInsert
     int addDevice(List<Device> newRow);
     
     Device getDeviceById(long id);

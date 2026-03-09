@@ -18,7 +18,6 @@ public record Feedback(
         String message
 ) {
     public interface Repository {
-        @BatchInsert
         int save(List<Feedback> feedback);
         
         @Delete

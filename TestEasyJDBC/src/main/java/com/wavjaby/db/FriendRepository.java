@@ -47,8 +47,8 @@ public interface FriendRepository {
     boolean isFriend(@Where(value = {"userId", "friendId"}) long userIdA,
                      @Where(value = {"userId", "friendId"}) long userIdB);
 
+    @Count
     @QuerySQL("ACCEPT=TRUE AND (USER_ID=:userId OR FRIEND_ID=:userId)")
-    @Select(columnSql = "COUNT(*)")
     int countFriends(long userId);
 
     @QuerySQL("ACCEPT=TRUE AND (USER_ID=:userId OR FRIEND_ID=:userId)")
