@@ -26,6 +26,13 @@ public class AnnotationHelper {
         console.printMessage(ERROR, "\n" + message, element, mirror, value);
     }
 
+    public static void printError(Messager console, Element element, Class<? extends Annotation> clazz,
+                                  String message) {
+
+        AnnotationMirror mirror = getAnnotationMirror(element, clazz);
+        console.printMessage(ERROR, "\n" + message, element, mirror);
+    }
+
     public static String getSimpleNameOrDefault(Element element, String defaultValue) {
         return element.getSimpleName().isEmpty() ? defaultValue : element.toString();
     }

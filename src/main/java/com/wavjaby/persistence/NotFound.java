@@ -7,5 +7,8 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.SOURCE)
-public @interface BatchInsert {
+public @interface NotFound {
+    Class<? extends Exception> exception();
+
+    String args() default "";
 }
