@@ -2,19 +2,13 @@ package com.wavjaby.jdbc.processor.util;
 
 
 import com.squareup.javapoet.*;
-import com.wavjaby.jdbc.processor.model.ColumnInfo;
-import com.wavjaby.jdbc.processor.model.MethodInfo;
-import com.wavjaby.jdbc.processor.model.MethodParamInfo;
-import com.wavjaby.jdbc.processor.model.QueryParamInfo;
-import com.wavjaby.jdbc.processor.model.TableData;
+import com.wavjaby.jdbc.processor.model.*;
 import org.springframework.jdbc.core.SqlParameterValue;
 
 import javax.lang.model.element.Modifier;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.*;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static com.wavjaby.jdbc.processor.util.SqlGenerator.quoteColumnName;
@@ -28,8 +22,12 @@ public class JdbcCodeGenerator {
         StringBuilder queryBuilder = new StringBuilder();
         List<CodeBlock> args = new ArrayList<>();
 
-        if (!tableConstructor && !params.isEmpty() || methodInfo != null && methodInfo.querySql != null) {
-            if (prefix != null) queryBuilder.append(prefix);
+        boolean haveCustomSql = methodInfo != null && methodInfo.querySqlParams != null;
+        boolean customSqlOverride = haveCustomSql && methodInfo.querySql.override();
+        if (!tableConstructor && (!params.isEmpty() || haveCustomSql)) {
+            queryBuilder.append(' ');
+            if (prefix != null && !customSqlOverride)
+                queryBuilder.append(prefix);
         }
 
         if (insert)
@@ -53,7 +51,7 @@ public class JdbcCodeGenerator {
                 if (insert || update) {
                     if (++j != 0) queryBuilder.append(',');
                 } else {
-                    if (++j != 0) queryBuilder.append(" or ");
+                    if (++j != 0) queryBuilder.append(" OR ");
                 }
 
                 // Query where with ignore case
@@ -115,22 +113,22 @@ public class JdbcCodeGenerator {
             if (conditionCount > -1)
                 queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
 
-            for (QueryParamInfo sqlParam : methodInfo.querySqlParams) {
-                queryBuilder.append(sqlParam.sqlPart);
-                if (sqlParam.paramName == null)
+            for (SqlParamInfo sqlParam : methodInfo.querySqlParams) {
+                queryBuilder.append(sqlParam.sqlPart());
+                if (sqlParam.paramName() == null)
                     continue;
                 queryBuilder.append('?');
 
-                MethodParamInfo methodParam = sqlParam.getMethodParamInfo();
+                MethodParamInfo methodParam = sqlParam.methodParamInfo();
 
                 if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
                     args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
                             SqlParameterValue.class,
                             java.sql.Types.class,
-                            sqlParam.paramName
+                            sqlParam.paramName()
                     ));
                 } else {
-                    args.add(CodeBlock.of("$L", sqlParam.paramName));
+                    args.add(CodeBlock.of("$L", sqlParam.paramName()));
                 }
 
             }
@@ -139,8 +137,8 @@ public class JdbcCodeGenerator {
     }
 
     public static QueryAndArgs updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, MethodInfo methodInfo, TableData tableData) {
-        QueryAndArgs where = getQueryAndArgs(whereColumns, methodInfo, false, false, " where ", " and ", false, tableData);
-        QueryAndArgs values = getQueryAndArgs(updateColumns, null, false, true, " set ", ",", false, tableData);
+        QueryAndArgs where = getQueryAndArgs(whereColumns, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        QueryAndArgs values = getQueryAndArgs(updateColumns, null, false, true, "SET ", ",", false, tableData);
 
         values.query.append(where.query);
         values.args.addAll(where.args);
@@ -207,7 +205,7 @@ public class JdbcCodeGenerator {
     public static void buildJdbcQueryReturn(MethodSpec.Builder methodBuilder, MethodInfo methodInfo, String sql, List<CodeBlock> args, boolean useMapper) {
         TypeName returnType = TypeName.get(methodInfo.returnTypeMirror);
         TypeName elementTypeName;
-        if (methodInfo.returnList && methodInfo.returnTypeMirror instanceof DeclaredType declaredType) {
+        if (methodInfo.returns.list() && methodInfo.returnTypeMirror instanceof DeclaredType declaredType) {
             List<? extends TypeMirror> argsList = declaredType.getTypeArguments();
             if (!argsList.isEmpty()) {
                 elementTypeName = TypeName.get(argsList.get(0)).box();
@@ -234,20 +232,48 @@ public class JdbcCodeGenerator {
             }
         }
 
-        if (methodInfo.returnList) {
+        if (methodInfo.returns.list()) {
             methodBuilder.addStatement("return $L($L)", queryMethod, queryArgs);
         } else {
             methodBuilder.addStatement("$T<$T> result = $L($L)", List.class, elementTypeName, queryMethod, queryArgs);
 
-            if (returnType.isPrimitive()) {
+            if (methodInfo.returnTypeMirror instanceof PrimitiveType primitiveType &&
+                    primitiveType.getKind() == TypeKind.INT) {
                 methodBuilder.addStatement("return result.isEmpty() ? 0 : result.get(0)");
+            } else if (methodInfo.returnTypeMirror instanceof PrimitiveType || methodInfo.notFound != null) {
+                ClassName exceptionClass = methodInfo.notFound.exception() != null
+                        ? ClassName.get(methodInfo.notFound.exception())
+                        : ClassName.get(RuntimeException.class);
+
+                methodBuilder.beginControlFlow("if (result.isEmpty())");
+                if (methodInfo.notFound.args() == null)
+                    methodBuilder.addStatement("throw new $T()", exceptionClass);
+                else
+                    methodBuilder.addStatement("throw new $T($L)", exceptionClass, methodInfo.notFound.args());
+                methodBuilder.endControlFlow();
+                methodBuilder.addStatement("return result.get(0)");
             } else {
                 methodBuilder.addStatement("return result.isEmpty() ? null : result.get(0)");
             }
         }
     }
 
-    public static void checkAndConvertEnumToStringArray(MethodSpec.Builder methodBuilder, List<MethodParamInfo> infos) {
+    public static CodeBlock addIdGenerator(TableData tableData, List<MethodParamInfo> infos) {
+        CodeBlock.Builder codeBlock = CodeBlock.builder();
+        int i = -1;
+        // Create Ids
+        for (ColumnInfo info : tableData.tableFields.values()) {
+            ++i;
+            if (info.idGenerator == null) continue;
+            String generator = tableData.getDependencyFieldName(info.idGenerator.toString());
+            codeBlock.addStatement("long id$L = $L.nextId()", i, generator);
+            infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null, false));
+        }
+        return codeBlock.build();
+    }
+
+    public static CodeBlock checkAndConvertEnumToStringArray(List<MethodParamInfo> infos) {
+        CodeBlock.Builder codeBlock = CodeBlock.builder();
         int tempVarCount = 0;
         for (MethodParamInfo param : infos) {
             for (ColumnInfo column : param.columns) {
@@ -261,13 +287,14 @@ public class JdbcCodeGenerator {
                 }
 
                 if (column.isArray && column.isEnum) {
-                    methodBuilder.addStatement("$T[] var$L = new $T[$L.length]", String.class, tempVarCount, String.class, argName);
-                    methodBuilder.beginControlFlow("for (int i = 0; i < $L.length; i++)", argName);
-                    methodBuilder.addStatement("var$L[i] = $L[i].name()", tempVarCount, argName);
-                    methodBuilder.endControlFlow();
+                    codeBlock.addStatement("$T[] var$L = new $T[$L.length]", String.class, tempVarCount, String.class, argName);
+                    codeBlock.beginControlFlow("for (int i = 0; i < $L.length; i++)", argName);
+                    codeBlock.addStatement("var$L[i] = $L[i].name()", tempVarCount, argName);
+                    codeBlock.endControlFlow();
                     tempVarCount++;
                 }
             }
         }
+        return codeBlock.build();
     }
 }

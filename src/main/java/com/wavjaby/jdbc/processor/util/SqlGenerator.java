@@ -37,69 +37,38 @@ public class SqlGenerator {
             }
         }
 
-        builder.append("create or replace view ");
+        StringBuilder joinSql = new StringBuilder();
+
+        builder.append("CREATE OR REPLACE VIEW ");
         if (tableInfo.schema != null) builder.append(tableInfo.schema).append('.');
-        builder.append(tableInfo.name).append(" as select ");
+        builder.append(tableInfo.name).append(" AS SELECT ");
         boolean first = true;
-        for (Map.Entry<String, ColumnInfo> entry : tableData.tableFields.entrySet()) {
-            String fieldName = entry.getKey();
-            ColumnInfo columnInfo = entry.getValue();
-
-            ColumnInfo targetColumn = base.tableFields.get(fieldName);
-            String targetTableName = base.tableInfo.name;
-            String targetTableSchema = base.tableInfo.schema;
-            boolean baseTableColumn = targetColumn != null;
-            // Find field from other table
-            if (targetColumn == null)
-                for (TableData table : referencedTable) {
-                    targetColumn = table.tableFields.get(fieldName);
-                    if (targetColumn != null) {
-                        targetTableName = table.tableInfo.name;
-                        targetTableSchema = table.tableInfo.schema;
-                        break;
-                    }
-                }
-            if (targetColumn == null) {
-                console.printMessage(ERROR, "Field '" + fieldName + "' not found in referenced table", columnInfo.field);
-                return true;
-            }
-
-
+        for (ColumnInfo columnInfo : tableData.tableFields.values()) {
             if (!first) builder.append(',');
             first = false;
 
-            if (baseTableColumn)
-                builder.append(baseTableShortName).append('.').append(columnInfo.columnName);
-            else {
-                if (targetTableSchema != null)
-                    builder.append(targetTableSchema).append(".");
-                builder.append(targetTableName).append('.').append(targetColumn.columnName);
+            String targetTableFullName = base.tableInfo.tableFullname.equals(columnInfo.tableInfo.tableFullname)
+                    ? baseTableShortName: columnInfo.tableInfo.tableFullname;
+            builder.append(targetTableFullName).append('.').append(columnInfo.columnName);
+
+            // Build join part
+            if (columnInfo.joinColumn != null) {
+                ColumnInfo referenceColumn = columnInfo.getReferencedColumnInfo();
+                TableData referenceTable = columnInfo.getReferencedTableData();
+                String referenceTableFullName = base.tableInfo.tableFullname.equals(referenceTable.tableInfo.tableFullname)
+                        ? baseTableShortName : referenceTable.tableInfo.tableFullname;
+
+                joinSql.append("\n");
+                joinSql.append("    JOIN ").append(referenceTableFullName).append(" ON ")
+                        .append(targetTableFullName).append('.').append(columnInfo.columnName).append('=')
+                        .append(referenceTableFullName).append('.').append(referenceColumn.columnName);
             }
         }
         builder.append("\n");
-        builder.append("    from ");
+        builder.append("    FROM ");
         if (base.tableInfo.schema != null) builder.append(base.tableInfo.schema).append(".");
         builder.append(base.tableInfo.name).append(" ").append(baseTableShortName);
-
-        for (Map.Entry<String, ColumnInfo> entry : tableData.tableFields.entrySet()) {
-            String fieldName = entry.getKey();
-            ColumnInfo columnInfo = entry.getValue();
-
-
-            if (columnInfo.joinColumn == null)
-                continue;
-
-            TableInfo targetTableInfo = columnInfo.getReferencedTableData().tableInfo;
-            String targetTableFullName = targetTableInfo.name;
-            if (targetTableInfo.schema != null)
-                targetTableFullName = targetTableInfo.schema + "." + targetTableFullName;
-
-            String targetColumnName = columnInfo.getReferencedColumnInfo().columnName;
-            builder.append("\n");
-            builder.append("    join ").append(targetTableFullName).append(" on ")
-                    .append(baseTableShortName).append('.').append(columnInfo.columnName).append('=')
-                    .append(targetTableFullName).append('.').append(targetColumnName);
-        }
+        builder.append(joinSql);
         builder.append(";");
 
         return false;
@@ -107,7 +76,7 @@ public class SqlGenerator {
 
     public static boolean generateCreateTableSql(TableData tableData, StringBuilder builder, Messager console) {
         TableInfo tableInfo = tableData.tableInfo;
-        builder.append("create table if not exists ");
+        builder.append("CREATE TABLE IF NOT EXISTS ");
         if (tableInfo.schema != null) builder.append(tableInfo.schema).append('.');
         builder.append(tableInfo.name).append("(");
         boolean first = true;
@@ -136,31 +105,31 @@ public class SqlGenerator {
 
             // Apply default value
             if (columnInfo.defaultValue != null) {
-                builder.append(" default ");
+                builder.append(" DEFAULT ");
                 if (columnInfo.isString)
                     builder.append('\'').append(columnInfo.defaultValue).append('\'');
                 else
                     builder.append(columnInfo.defaultValue);
             }
-            if (!columnInfo.nullable) builder.append(" not null");
+            if (!columnInfo.nullable) builder.append(" NOT NULL");
 
         }
         if (!tableData.primaryKey.isEmpty()) {
             builder.append(",\n");
-            builder.append("    constraint ").append(tableInfo.name).append("_PK");
-            builder.append(" primary key(");
+            builder.append("    CONSTRAINT ").append(tableInfo.name).append("_PK");
+            builder.append(" PRIMARY KEY(");
             for (int i = 0; i < tableData.primaryKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(tableData.primaryKey.get(i).columnName);
+                builder.append(tableData.primaryKey.get(i).columnName.toLowerCase());
             }
             builder.append(")");
         }
         for (List<ColumnInfo> uniqueKey : tableData.uniqueKeyList) {
             builder.append(",\n");
-            builder.append("    constraint").append(tableInfo.getUniqueKey(uniqueKey)).append(" unique (");
+            builder.append("    CONSTRAINT").append(tableInfo.getUniqueKey(uniqueKey)).append(" UNIQUE (");
             for (int i = 0; i < uniqueKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(uniqueKey.get(i).columnName);
+                builder.append(uniqueKey.get(i).columnName.toLowerCase());
             }
             builder.append(")");
         }
@@ -169,16 +138,16 @@ public class SqlGenerator {
             String foreignKeyName = tableInfo.name + '_' + String.join("__", foreignKeyGroup.sourceColumns()) + "_FK";
 
             builder.append(",\n");
-            builder.append("    constraint ").append(foreignKeyName).append(" foreign key (")
-                    .append(String.join(",", foreignKeyGroup.sourceColumns())).append(") references ");
+            builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
+                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ");
             // If main table have schema, referenced table have to specify as well
             if (tableInfo.schema != null || foreignKeyGroup.referencedTable().schema != null) {
                 String referencedTableSchema = foreignKeyGroup.referencedTable().schema;
                 if (referencedTableSchema == null)
-                    referencedTableSchema = convertPropertyNameToUnderscoreName("PUBLIC");
+                    referencedTableSchema = convertPropertyNameToUnderscoreName("PUBLIC").toLowerCase();
                 builder.append(referencedTableSchema).append('.');
             }
-            builder.append(foreignKeyGroup.referencedTable().name).append("(").append(String.join(",", foreignKeyGroup.referencedColumns())).append(")");
+            builder.append(foreignKeyGroup.referencedTable().name.toLowerCase()).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
         }
 
         builder.append("\n);");
@@ -203,12 +172,12 @@ public class SqlGenerator {
 
     public static StringBuilder sqlResultModifier(MethodInfo methodInfo) {
         StringBuilder builder = new StringBuilder();
-        if (methodInfo.orderByColumns != null) {
+        if (methodInfo.orderBy != null) {
             builder.append(" ORDER BY ");
-            for (int i = 0; i < methodInfo.orderByColumns.length; i++) {
-                ColumnInfo column = methodInfo.orderByColumns[i];
-                builder.append(column.columnName).append(" ").append(methodInfo.orderBy[i].direction());
-                if (i < methodInfo.orderByColumns.length - 1)
+            for (int i = 0; i < methodInfo.orderBy.length; i++) {
+                ColumnInfo column = methodInfo.orderBy[i].column();
+                builder.append(column.columnName).append(" ").append(methodInfo.orderBy[i].direction().name());
+                if (i < methodInfo.orderBy.length - 1)
                     builder.append(", ");
             }
         }
@@ -218,7 +187,7 @@ public class SqlGenerator {
     }
 
     public static StringBuilder quoteColumnName(StringBuilder sb, String columnName) {
-        return sb.append('"').append(columnName).append('"');
+        return sb.append('"').append(columnName.toLowerCase()).append('"');
     }
 
     public static String toSqlType(TypeMirror type, Column column) {

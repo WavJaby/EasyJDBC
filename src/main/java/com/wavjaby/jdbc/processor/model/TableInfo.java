@@ -33,14 +33,6 @@ public class TableInfo {
     public final String repoClassPath;
     public final String schema;
 
-    public String getUniqueKey(List<ColumnInfo> uniqueKey) {
-        StringBuilder sb = new StringBuilder(" " + name);
-        for (ColumnInfo info : uniqueKey) {
-            sb.append('_').append(info.columnName);
-        }
-        return sb.append("_UK").toString();
-    }
-
     public TableInfo(TypeElement tableClassEle, TypeElement repoIntClassElement, TypeElement virtualBaseClass) {
         Table table = tableClassEle.getAnnotation(Table.class);
         assert table != null;
@@ -54,9 +46,9 @@ public class TableInfo {
         this.classPath = tableClassEle.asType().toString();
         this.className = tableClassEle.getSimpleName().toString();
         this.classPackagePath = tableClassEle.getEnclosingElement().toString();
-        
-        this.name = convertPropertyNameToUnderscoreName(!table.name().isBlank() ? table.name() : className);
-        this.schema = table.schema().isBlank() ? null : convertPropertyNameToUnderscoreName(table.schema());
+
+        this.name = convertPropertyNameToUnderscoreName(!table.name().isBlank() ? table.name() : className).toLowerCase();
+        this.schema = table.schema().isBlank() ? null : convertPropertyNameToUnderscoreName(table.schema()).toLowerCase();
         this.tableFullname = schema == null ? name : schema + '.' + name;
 
         this.repoIntClassElement = repoIntClassElement;
@@ -64,7 +56,7 @@ public class TableInfo {
         String repoIntClassName = repoIntClassElement.getSimpleName().toString();
         String repoIntPackagePath = repoIntClassElement.getEnclosingElement().toString();
         String repoIntClassPath = repoIntClassElement.toString();
-        
+
         for (Element element : tableClassEle.getEnclosedElements()) {
             if (element.getKind() == ElementKind.INTERFACE && element == repoIntClassElement) {
                 repoIntClassName = repoIntClassPath.substring(this.classPath.length() - this.className.length());
@@ -79,5 +71,13 @@ public class TableInfo {
         this.repoClassPath = classPackagePath.isEmpty() ? repoClassName : classPackagePath + "." + repoClassName;
 
         this.virtualBaseClass = virtualBaseClass;
+    }
+
+    public String getUniqueKey(List<ColumnInfo> uniqueKey) {
+        StringBuilder sb = new StringBuilder(" " + name);
+        for (ColumnInfo info : uniqueKey) {
+            sb.append('_').append(info.columnName);
+        }
+        return sb.append("_UK").toString();
     }
 }

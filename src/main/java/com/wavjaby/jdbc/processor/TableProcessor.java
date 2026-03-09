@@ -149,6 +149,12 @@ public class TableProcessor extends AbstractProcessor {
     }
 
     private boolean processTableData(TableData tableData, Map<String, TableData> tableDataMap) {
+        for (ColumnInfo column : tableData.tableFields.values()) {
+            // Prepare referencedColumnInfo and referencedTableData
+            if (column.processTableJoin(tableDataMap, tableData, console))
+                return true;
+        }
+
         if (tableData.tableInfo.isVirtual && tableData.processVirtualTable(tableData, tableDataMap, console))
             return true;
 
@@ -281,7 +287,7 @@ public class TableProcessor extends AbstractProcessor {
         constructorBuilder.addStatement("tableMapper = new $T<>($T.class, $L)",
                 FastResultSetExtractor.class,
                 tableDataClass,
-                tableData.tableColumnNames.size());
+                tableData.tableColumns.size());
 
         typeBuilder.addMethod(constructorBuilder.build());
 
@@ -306,7 +312,7 @@ public class TableProcessor extends AbstractProcessor {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
 
             // Explicit column SQL selection takes highest priority
-            if (!method.returnColumnSqlParams.isEmpty()) {
+            if (method.returns.column().columnSqlParams() != null) {
                 if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
@@ -353,7 +359,7 @@ public class TableProcessor extends AbstractProcessor {
                     }
                 }
 
-                console.printMessage(ERROR, "Unrecognized return type for " + method.returnTypeName + " method: " + method.method, method.method);
+                console.printMessage(ERROR, "Unrecognized return type for " + method.returns.typeName() + " method: " + method.method, method.method);
                 return true;
             }
 
@@ -370,7 +376,7 @@ public class TableProcessor extends AbstractProcessor {
             }
 
             // Declared and other return types
-            if (method.returnSelfTable) {
+            if (method.returns.table()) {
                 // Update function
                 if (method.modifyRow) {
                     if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, false))
@@ -390,7 +396,7 @@ public class TableProcessor extends AbstractProcessor {
             }
 
             // Return a single column
-            if (method.returnColumn != null) {
+            if (method.returns.column().column() != null) {
                 if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
                     return true;
                 continue;
@@ -404,7 +410,7 @@ public class TableProcessor extends AbstractProcessor {
 
 
     private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
-        if (methodInfo.returnList) {
+        if (methodInfo.returns.list()) {
             console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for insert method", methodInfo.method);
             return true;
         }
@@ -415,22 +421,14 @@ public class TableProcessor extends AbstractProcessor {
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
         List<MethodParamInfo> infos = new ArrayList<>(methodInfo.params);
-        int i = -1;
-        // Create Ids
-        for (ColumnInfo info : tableData.tableFields.values()) {
-            ++i;
-            if (info.idGenerator == null) continue;
-            String generator = tableData.getDependencyFieldName(info.idGenerator.toString());
-            methodBuilder.addStatement("long id$L = $L.nextId()", i, generator);
-            infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null, false));
-        }
 
-        JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodBuilder, infos);
+        CodeBlock idGenerator = JdbcCodeGenerator.addIdGenerator(tableData, infos);
+        CodeBlock enumString = JdbcCodeGenerator.checkAndConvertEnumToStringArray(infos);
 
         JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.getQueryAndArgs(infos, null, true, false, null, ",", false, tableData);
 
         // Append variable values
-        values.query().append(" values (");
+        values.query().append(" VALUES (");
         boolean first = true;
         for (MethodParamInfo info : methodInfo.params) {
             for (ColumnInfo column : info.columns) {
@@ -449,18 +447,22 @@ public class TableProcessor extends AbstractProcessor {
             methodBuilder.addStatement("$T<Object[]> batchValues = new $T<>($L_.size())",
                     List.class, ArrayList.class, param.paramName);
             methodBuilder.beginControlFlow("for ($L $L : $L_)", typeStr, param.paramName, param.paramName);
+            methodBuilder.addCode(idGenerator);
+            methodBuilder.addCode(enumString);
             methodBuilder.addStatement("batchValues.add(new Object[]{$L})", CodeBlock.join(values.args(), ", "));
             methodBuilder.endControlFlow();
 
-            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "insert into " + tableInfo.tableFullname + values.query());
+            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + tableInfo.tableFullname.toLowerCase() + values.query());
 
             if (returnInt) {
                 methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
             }
         } else {
-            String sql = "insert into " + tableInfo.tableFullname + values.query();
+            methodBuilder.addCode(idGenerator);
+            methodBuilder.addCode(enumString);
+            String sql = "INSERT INTO " + tableInfo.tableFullname.toLowerCase() + values.query();
 
-            if (methodInfo.returnSelfTable) {
+            if (methodInfo.returns.table()) {
                 if (values.args().isEmpty()) {
                     methodBuilder.addStatement("jdbc.update($S)", sql);
                 } else {
@@ -497,9 +499,9 @@ public class TableProcessor extends AbstractProcessor {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "select count(*) from " + tableInfo.tableFullname + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, true);
 
@@ -512,9 +514,9 @@ public class TableProcessor extends AbstractProcessor {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "select count(*) from " + tableInfo.tableFullname + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, false);
 
@@ -529,34 +531,34 @@ public class TableProcessor extends AbstractProcessor {
 
         StringBuilder columnQuery = new StringBuilder();
         List<CodeBlock> columnArgs = new ArrayList<>();
-        if (!methodInfo.returnColumnSqlParams.isEmpty()) {
-            for (QueryParamInfo param : methodInfo.returnColumnSqlParams) {
-                columnQuery.append(param.sqlPart);
-                if (param.paramName != null) {
+        if (methodInfo.returns.column().columnSqlParams() != null) {
+            for (SqlParamInfo param : methodInfo.returns.column().columnSqlParams()) {
+                columnQuery.append(param.sqlPart());
+                if (param.paramName() != null) {
                     columnQuery.append('?');
-                    MethodParamInfo methodParam = param.getMethodParamInfo();
+                    MethodParamInfo methodParam = param.methodParamInfo();
                     if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
                         columnArgs.add(CodeBlock.of("new $T($T.ARRAY, $L)",
                                 org.springframework.jdbc.core.SqlParameterValue.class,
                                 java.sql.Types.class,
-                                param.paramName
+                                param.paramName()
                         ));
                     } else {
-                        columnArgs.add(CodeBlock.of("$L", param.paramName));
+                        columnArgs.add(CodeBlock.of("$L", param.paramName()));
                     }
                 }
             }
         } else {
-            SqlGenerator.quoteColumnName(columnQuery, methodInfo.returnColumn.columnName);
+            SqlGenerator.quoteColumnName(columnQuery, methodInfo.returns.column().column().columnName);
         }
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
         if (!columnArgs.isEmpty()) {
             queryWithArgs.args().addAll(columnArgs);
         }
 
-        String sql = "select " + columnQuery + " from " + tableInfo.tableFullname + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), false);
 
@@ -569,17 +571,17 @@ public class TableProcessor extends AbstractProcessor {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
         StringBuilder columnQuery = new StringBuilder();
         boolean first = true;
-        for (String name : tableData.tableColumnNames) {
+        for (String name : tableData.tableColumns.keySet()) {
             if (!first) columnQuery.append(',');
             first = false;
             SqlGenerator.quoteColumnName(columnQuery, name);
         }
 
-        String sql = "select " + columnQuery + " from " + tableInfo.tableFullname + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), true);
 
@@ -593,9 +595,9 @@ public class TableProcessor extends AbstractProcessor {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, " where ", " and ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "delete from " + tableInfo.tableFullname + queryWithArgs.query();
+        String sql = "DELETE FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, queryWithArgs.args(), methodInfo.returnTypeMirror);
 
@@ -604,7 +606,7 @@ public class TableProcessor extends AbstractProcessor {
     }
 
     private boolean generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) {
-        if (methodInfo.returnList) {
+        if (methodInfo.returns.list()) {
             console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for update method", methodInfo.method);
             return true;
         }
@@ -628,29 +630,29 @@ public class TableProcessor extends AbstractProcessor {
             }
         }
 
-        JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodBuilder, methodInfo.params);
+        methodBuilder.addCode(JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodInfo.params));
 
         JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
 
-        String sql = "update " + tableInfo.tableFullname + update.query();
+        String sql = "UPDATE " + tableInfo.tableFullname.toLowerCase() + update.query();
 
-        if (methodInfo.returnSelfTable) {
+        if (methodInfo.returns.table()) {
             if (update.args().isEmpty())
                 methodBuilder.beginControlFlow("if (jdbc.update($S) == 1)", sql);
             else
                 methodBuilder.beginControlFlow("if (jdbc.update($S, $L) == 1)", sql, CodeBlock.join(update.args(), ", "));
 
-            JdbcCodeGenerator.QueryAndArgs where = JdbcCodeGenerator.getQueryAndArgs(whereColumns, null, false, false, " where ", " and ", false, tableData);
+            JdbcCodeGenerator.QueryAndArgs where = JdbcCodeGenerator.getQueryAndArgs(whereColumns, null, false, false, "WHERE ", " AND ", false, tableData);
 
             StringBuilder columnQuery = new StringBuilder();
             boolean first = true;
-            for (String name : tableData.tableColumnNames) {
+            for (String name : tableData.tableColumns.keySet()) {
                 if (!first) columnQuery.append(',');
                 first = false;
                 SqlGenerator.quoteColumnName(columnQuery, name);
             }
 
-            String selectSql = "select " + columnQuery + " from " + tableInfo.tableFullname + where.query();
+            String selectSql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + where.query();
 
             JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), true);
 

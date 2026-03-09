@@ -1,6 +1,8 @@
 package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
+import com.wavjaby.persistence.JoinColumn;
 import com.wavjaby.persistence.UniqueConstraint;
 
 import javax.annotation.processing.Messager;
@@ -16,7 +18,7 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 public class TableData {
     public final TableInfo tableInfo;
     public final Map<String, String> classDependency = new HashMap<>();
-    public final LinkedHashSet<String> tableColumnNames = new LinkedHashSet<>();
+    public final LinkedHashMap<String, ColumnInfo> tableColumns = new LinkedHashMap<>();
     public final LinkedHashMap<String, ColumnInfo> tableFields = new LinkedHashMap<>();
     public final List<MethodInfo> interfaceMethodInfo = new ArrayList<>();
 
@@ -57,11 +59,11 @@ public class TableData {
                 return true;
 
             tableFields.put(field.getSimpleName().toString(), info);
-            if (tableColumnNames.contains(info.columnName)) {
+            if (tableColumns.containsKey(info.columnName)) {
                 console.printMessage(ERROR, "Duplicate column name found: " + info.columnName, field);
                 return true;
             }
-            tableColumnNames.add(info.columnName);
+            tableColumns.put(info.columnName, info);
 
             // Add primary key
             if (info.isPrimaryKey) {
@@ -90,15 +92,17 @@ public class TableData {
             for (String name : uniqueConstraint.fieldNames()) {
                 ColumnInfo columnInfo = this.tableFields.get(name);
                 if (columnInfo == null) {
-                    console.printMessage(ERROR, "Field '" + name + "' not exist in table '" + tableInfo.classPath + "'", tableInfo.tableClassEle, uniqueConstraintMirror);
+                    AnnotationValue field = getAnnotationValue(uniqueConstraintMirror, "fieldNames");
+                    console.printMessage(ERROR, "Field '" + name + "' not exist in table '" + tableInfo.classPath + "'", tableInfo.tableClassEle, uniqueConstraintMirror, field);
                     return true;
                 }
                 uniqueKey.add(columnInfo);
             }
             // Fet unique constraint column by column name
             for (String name : uniqueConstraint.columnNames()) {
-                if (!this.tableColumnNames.contains(name)) {
-                    console.printMessage(ERROR, "Column '" + name + "' not exist in table: " + tableInfo.name, tableInfo.tableClassEle, uniqueConstraintMirror);
+                if (!this.tableColumns.containsKey(name)) {
+                    AnnotationValue column = getAnnotationValue(uniqueConstraintMirror, "columnNames");
+                    console.printMessage(ERROR, "Column '" + name + "' not exist in table: " + tableInfo.name, tableInfo.tableClassEle, uniqueConstraintMirror, column);
                     return true;
                 }
                 for (ColumnInfo columnInfo : this.tableFields.values()) {
@@ -119,25 +123,25 @@ public class TableData {
         extractClassMethods(tableInfo.repoIntClassElement, methods);
 
         // Find all methods in interface
+        boolean error = false;
         for (ExecutableElement e : methods.values()) {
-            MethodInfo methodInfo = new MethodInfo(e, tableData);
-            if (methodInfo.parseMethod(console)) return true;
+            MethodInfo methodInfo;
+            try {
+                methodInfo = new MethodInfo(e, tableData, console);
+            } catch (EmptyProcessingException ex) {
+                error = true;
+                continue;
+            }
             interfaceMethodInfo.add(methodInfo);
         }
 
-        return false;
+        return error;
     }
 
     /**
      * Process {@code @JoinColumn} annotation class link, column foreign key
      */
     public boolean processTableJoin(TableData tableData, Map<String, TableData> tableDataMap, Messager console) {
-        for (ColumnInfo column : tableData.tableFields.values()) {
-            // Prepare referencedColumnInfo and referencedTableData
-            if (column.processTableJoin(tableDataMap, this, console))
-                return true;
-        }
-
         for (ColumnInfo column : tableData.tableFields.values()) {
             if (column.getReferencedColumnInfo() == null) continue;
             ColumnInfo referencedColumn = column.getReferencedColumnInfo();
@@ -186,6 +190,46 @@ public class TableData {
             return true;
         }
         this.virtualBaseTableData = virtualBaseTableData;
+
+        // Get all referenced tables
+        Map<String, TableData> referencedTables = new LinkedHashMap<>();
+        referencedTables.put(virtualBaseClass, virtualBaseTableData);
+        for (ColumnInfo info : tableData.tableFields.values()) {
+            if (info.joinColumn == null)
+                continue;
+
+            if (virtualBaseClass.equals(info.referencedTableClassPath)) {
+                AnnotationMirror joinTableColumnMirror = getAnnotationMirror(info.field, JoinColumn.class);
+                AnnotationValue referencedClass = getAnnotationValue(joinTableColumnMirror, "referencedClass");
+                console.printMessage(ERROR, "Virtual table cannot reference itself", info.field, joinTableColumnMirror, referencedClass);
+                return true;
+            }
+
+            referencedTables.put(info.referencedTableClassPath, info.getReferencedTableData());
+        }
+
+        for (ColumnInfo info : tableData.tableFields.values()) {
+            String fieldName = info.field.getSimpleName().toString();
+
+            ColumnInfo targetColumn = null;
+            for (TableData table : referencedTables.values()) {
+                targetColumn = table.tableFields.get(fieldName);
+                if (targetColumn != null) break;
+            }
+            if (targetColumn == null) {
+                console.printMessage(ERROR, "Field '" + fieldName + "' not found in any referenced table", info.field);
+                return true;
+            }
+
+            // Redirect field table to target table
+            targetColumn = new ColumnInfo(info.field, targetColumn.tableInfo);
+            if (targetColumn.joinColumn != null)
+                targetColumn.setReferencedInfo(info.getReferencedTableData(), info.getReferencedColumnInfo());
+
+            tableColumns.put(info.columnName, targetColumn);
+            tableFields.put(fieldName, targetColumn);
+        }
+
         return false;
     }
 

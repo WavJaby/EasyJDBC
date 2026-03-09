@@ -44,6 +44,7 @@ public class ColumnInfo {
     public ColumnInfo(VariableElement field, TableInfo tableInfo) {
         this.column = field.getAnnotation(Column.class);
         this.tableInfo = tableInfo;
+        this.field = field;
 
         // Get GeneratedValue
         AnnotationMirror GeneratedValue = getAnnotationMirror(field, GenericGenerator.class);
@@ -95,7 +96,6 @@ public class ColumnInfo {
         this.isPrimaryKey = field.getAnnotation(Id.class) != null;
         ColumnDefault columnDefault = field.getAnnotation(ColumnDefault.class);
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
-        this.field = field;
         this.columnName = getColumnName(field);
 
         boolean isUniqueKey = false;
@@ -163,17 +163,17 @@ public class ColumnInfo {
 
     private String getColumnName(Element field) {
         if (column != null && !column.name().isEmpty())
-            return column.name();
+            return column.name().toLowerCase();
 
         if (joinColumn != null) {
             if (!joinColumn.name().isEmpty()) {
-                return joinColumn.name();
+                return joinColumn.name().toLowerCase();
             } else {
-                return convertPropertyNameToUnderscoreName(field.getSimpleName().toString());
+                return convertPropertyNameToUnderscoreName(field.getSimpleName().toString()).toLowerCase();
             }
         }
 
-        return convertPropertyNameToUnderscoreName(field.getSimpleName().toString());
+        return convertPropertyNameToUnderscoreName(field.getSimpleName().toString()).toLowerCase();
     }
 
     public boolean processTableJoin(Map<String, TableData> tableDataMap, TableData tableData, Messager console) {
@@ -187,12 +187,7 @@ public class ColumnInfo {
         // Find referenced ColumnInfo
         ColumnInfo referencedColumnInfo = null;
         if (!joinColumn.referencedColumnName().isEmpty()) {
-            for (ColumnInfo info : refrenceTableData.tableFields.values()) {
-                if (info.columnName.equals(joinColumn.referencedColumnName())) {
-                    referencedColumnInfo = info;
-                    break;
-                }
-            }
+            referencedColumnInfo = tableData.tableColumns.get(joinColumn.referencedColumnName());
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced column '" + joinColumn.referencedColumnName() + "' not exist in table '" + referencedTableClassPath + "'", field);
                 return true;
@@ -208,6 +203,11 @@ public class ColumnInfo {
         this.referencedColumnInfo = referencedColumnInfo;
 
         return false;
+    }
+
+    public void setReferencedInfo(TableData referencedTableData, ColumnInfo referencedColumnInfo) {
+        this.referencedTableData = referencedTableData;
+        this.referencedColumnInfo = referencedColumnInfo;
     }
 
     public ColumnInfo getReferencedColumnInfo() {
