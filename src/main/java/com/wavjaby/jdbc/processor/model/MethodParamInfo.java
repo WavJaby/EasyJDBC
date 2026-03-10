@@ -1,6 +1,6 @@
 package com.wavjaby.jdbc.processor.model;
 
-import com.wavjaby.persistence.Where;
+import com.wavjaby.jdbc.annotation.Where;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;

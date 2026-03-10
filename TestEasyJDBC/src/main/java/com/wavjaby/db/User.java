@@ -1,12 +1,9 @@
 package com.wavjaby.db;
 
 
-import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.util.Snowflake;
-import com.wavjaby.persistence.Column;
-import com.wavjaby.persistence.GenericGenerator;
-import com.wavjaby.persistence.Id;
-import com.wavjaby.persistence.UniqueConstraint;
+import com.wavjaby.jdbc.annotation.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 

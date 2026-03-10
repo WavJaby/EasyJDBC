@@ -5,9 +5,9 @@ import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.MethodParamInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
-import com.wavjaby.persistence.FieldName;
-import com.wavjaby.persistence.UpdateData;
-import com.wavjaby.persistence.Where;
+import com.wavjaby.jdbc.annotation.FieldName;
+import com.wavjaby.jdbc.annotation.UpdateData;
+import com.wavjaby.jdbc.annotation.Where;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;

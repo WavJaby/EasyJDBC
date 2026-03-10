@@ -1,7 +1,6 @@
 package com.wavjaby.db;
 
-import com.wavjaby.persistence.Count;
-import com.wavjaby.persistence.Select;
+import com.wavjaby.jdbc.annotation.*;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 

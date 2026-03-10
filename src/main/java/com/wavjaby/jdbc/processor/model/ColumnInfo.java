@@ -1,6 +1,6 @@
 package com.wavjaby.jdbc.processor.model;
 
-import com.wavjaby.persistence.*;
+import com.wavjaby.jdbc.annotation.*;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;

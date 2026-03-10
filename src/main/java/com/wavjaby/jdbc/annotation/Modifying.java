@@ -1,4 +1,4 @@
-package com.wavjaby.persistence;
+package com.wavjaby.jdbc.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -7,5 +7,5 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.SOURCE)
-public @interface Delete {
+public @interface Modifying {
 }

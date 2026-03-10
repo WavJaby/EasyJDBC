@@ -1,6 +1,6 @@
 package com.wavjaby.db;
 
-import com.wavjaby.persistence.*;
+import com.wavjaby.jdbc.annotation.*;
 
 import java.util.List;
 

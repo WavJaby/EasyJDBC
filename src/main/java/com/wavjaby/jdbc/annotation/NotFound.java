@@ -1,11 +1,14 @@
-package com.wavjaby.persistence;
+package com.wavjaby.jdbc.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-@Target({ElementType.PARAMETER})
+@Target({ElementType.METHOD})
 @Retention(RetentionPolicy.SOURCE)
-public @interface UpdateData {
+public @interface NotFound {
+    Class<? extends Exception> exception();
+
+    String args() default "";
 }

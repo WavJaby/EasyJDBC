@@ -1,4 +1,4 @@
-package com.wavjaby.persistence;
+package com.wavjaby.jdbc.annotation;
 
 import com.wavjaby.jdbc.util.IdentifierGenerator;
 import com.wavjaby.jdbc.util.Snowflake;

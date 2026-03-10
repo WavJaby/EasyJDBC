@@ -2,7 +2,7 @@ package com.wavjaby.jdbc.processor;
 
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.*;
-import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
 import com.wavjaby.jdbc.processor.util.ProcessorUtil;
@@ -34,7 +34,7 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 
 @AutoService(Processor.class)
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
-@SupportedAnnotationTypes("com.wavjaby.jdbc.Table")
+@SupportedAnnotationTypes("com.wavjaby.jdbc.annotation.Table")
 @SuppressWarnings("unused")
 public class TableProcessor extends AbstractProcessor {
     private Messager console;

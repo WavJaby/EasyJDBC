@@ -50,6 +50,9 @@ public class ProcessorUtil {
                 return true;
             }
             String sourceContent = getResourceAsString(inputStream);
+            sourceContent = sourceContent.replace("package com.wavjaby.persistence;", "package com.wavjaby.jdbc.annotation;");
+            sourceContent = sourceContent.replace("import com.wavjaby.persistence.", "import com.wavjaby.jdbc.annotation.");
+            sourceContent = sourceContent.replace("com.wavjaby.jdbc.annotation.Table", "com.wavjaby.jdbc.annotation.Table");
 
             try (Writer out = processingEnv.getFiler().createSourceFile(classPath).openWriter()) {
                 out.write(sourceContent);

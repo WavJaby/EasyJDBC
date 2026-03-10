@@ -1,6 +1,4 @@
-package com.wavjaby.jdbc;
-
-import com.wavjaby.persistence.UniqueConstraint;
+package com.wavjaby.jdbc.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

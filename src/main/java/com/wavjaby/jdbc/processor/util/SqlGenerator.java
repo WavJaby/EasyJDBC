@@ -4,7 +4,7 @@ import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
-import com.wavjaby.persistence.Column;
+import com.wavjaby.jdbc.annotation.Column;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.ElementKind;

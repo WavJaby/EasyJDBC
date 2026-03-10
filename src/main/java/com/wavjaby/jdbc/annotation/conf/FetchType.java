@@ -1,4 +1,4 @@
-package com.wavjaby.persistence.conf;
+package com.wavjaby.jdbc.annotation.conf;
 
 public enum FetchType {
     LAZY,

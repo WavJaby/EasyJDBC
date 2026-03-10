@@ -7,6 +7,7 @@ group = "com.wavjaby"
 version = "1.0-SNAPSHOT"
 
 repositories {
+    mavenLocal()
     mavenCentral {
         content { excludeModule("javax.media", "jai_core") }
     }
@@ -30,6 +31,8 @@ dependencies {
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
+//    compileOnly("com.wavjaby:easyjdbc:0.0.1-SNAPSHOT")
+//    annotationProcessor("com.wavjaby:easyjdbc:0.0.1-SNAPSHOT")
     compileOnly(project(":"))
     annotationProcessor(project(":"))
 

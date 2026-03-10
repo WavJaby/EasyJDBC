@@ -1,9 +1,9 @@
 package com.wavjaby.jdbc.processor.model;
 
+import com.wavjaby.jdbc.annotation.*;
+import com.wavjaby.jdbc.annotation.conf.Direction;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import com.wavjaby.jdbc.processor.util.MethodParamParser;
-import com.wavjaby.persistence.*;
-import com.wavjaby.persistence.conf.Direction;
 import org.jspecify.annotations.NonNull;
 
 import javax.annotation.processing.Messager;

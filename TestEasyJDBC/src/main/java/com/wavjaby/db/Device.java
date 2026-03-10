@@ -1,8 +1,6 @@
 package com.wavjaby.db;
 
-import com.wavjaby.jdbc.Table;
-import com.wavjaby.jdbc.util.Snowflake;
-import com.wavjaby.persistence.*;
+import com.wavjaby.jdbc.annotation.*;
 
 import java.sql.Timestamp;
 

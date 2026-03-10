@@ -1,6 +1,6 @@
-package com.wavjaby.persistence;
+package com.wavjaby.jdbc.annotation;
 
-import com.wavjaby.persistence.conf.Direction;
+import com.wavjaby.jdbc.annotation.conf.Direction;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

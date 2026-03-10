@@ -1,9 +1,9 @@
 package com.wavjaby.jdbc.processor.model;
 
-import com.wavjaby.jdbc.Table;
+import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
-import com.wavjaby.persistence.JoinColumn;
-import com.wavjaby.persistence.UniqueConstraint;
+import com.wavjaby.jdbc.annotation.JoinColumn;
+import com.wavjaby.jdbc.annotation.UniqueConstraint;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;
