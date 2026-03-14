@@ -28,15 +28,6 @@ public class SqlGenerator {
         TableData base = tableData.getVirtualBaseTableData();
         String baseTableShortName = "B";
 
-        // Find table reference
-        List<TableData> referencedTable = new ArrayList<>();
-        for (Map.Entry<String, ColumnInfo> entry : tableData.tableFields.entrySet()) {
-            ColumnInfo columnInfo = entry.getValue();
-            if (columnInfo.joinColumn != null) {
-                referencedTable.add(columnInfo.getReferencedTableData());
-            }
-        }
-
         StringBuilder joinSql = new StringBuilder();
 
         builder.append("CREATE OR REPLACE VIEW ");
@@ -47,19 +38,26 @@ public class SqlGenerator {
             if (!first) builder.append(',');
             first = false;
 
-            String targetTableFullName = base.tableInfo.tableFullname.equals(columnInfo.tableInfo.tableFullname)
+            String targetTableFullName = base.tableInfo.equals(columnInfo.tableInfo)
                     ? baseTableShortName: columnInfo.tableInfo.tableFullname;
+
+            if (columnInfo.defaultValue != null)
+                builder.append("COALESCE(");
+
             builder.append(targetTableFullName).append('.').append(columnInfo.columnName);
+
+            if (columnInfo.defaultValue != null)
+                builder.append(", ").append(columnInfo.defaultValue).append(") as ").append(columnInfo.columnName);
 
             // Build join part
             if (columnInfo.joinColumn != null) {
                 ColumnInfo referenceColumn = columnInfo.getReferencedColumnInfo();
                 TableData referenceTable = columnInfo.getReferencedTableData();
-                String referenceTableFullName = base.tableInfo.tableFullname.equals(referenceTable.tableInfo.tableFullname)
+                String referenceTableFullName = base.tableInfo.equals(referenceTable.tableInfo)
                         ? baseTableShortName : referenceTable.tableInfo.tableFullname;
 
                 joinSql.append("\n");
-                joinSql.append("    JOIN ").append(referenceTableFullName).append(" ON ")
+                joinSql.append("    LEFT JOIN ").append(referenceTableFullName).append(" ON ")
                         .append(targetTableFullName).append('.').append(columnInfo.columnName).append('=')
                         .append(referenceTableFullName).append('.').append(referenceColumn.columnName);
             }
