@@ -29,87 +29,88 @@ public class JdbcCodeGenerator {
             if (prefix != null && !customSqlOverride)
                 queryBuilder.append(prefix);
         }
-
-        if (insert)
-            queryBuilder.append("(");
-
-        int tempVarCount = 0;
-
         int conditionCount = -1;
-        for (MethodParamInfo param : params) {
-            if (param.columns.isEmpty()) continue;
-            if (++conditionCount != 0) queryBuilder.append(conjunction);
-
-            // Query with multiple columns
-            if (!insert && !update && param.columns.size() > 1)
+        if (!customSqlOverride) {
+            if (insert)
                 queryBuilder.append("(");
-            int j = -1;
-            for (ColumnInfo column : param.columns) {
-                if (param.dataClass && column.idGenerator != null)
-                    continue;
 
-                if (insert || update) {
-                    if (++j != 0) queryBuilder.append(',');
-                } else {
-                    if (++j != 0) queryBuilder.append(" OR ");
-                }
+            int tempVarCount = 0;
 
-                // Query where with ignore case
-                if (!update && param.ignoreCase) {
-                    queryBuilder.append("LOWER(");
-                    quoteColumnName(queryBuilder, column.columnName);
-                    queryBuilder.append(") ").append(param.whereOperation).append(" LOWER(?)");
-                } else if (insert)
-                    quoteColumnName(queryBuilder, column.columnName);
-                else {
-                    if (!update && column.nullable) {
+            for (MethodParamInfo param : params) {
+                if (param.columns.isEmpty()) continue;
+                if (++conditionCount != 0) queryBuilder.append(conjunction);
+
+                // Query with multiple columns
+                if (!insert && !update && param.columns.size() > 1)
+                    queryBuilder.append("(");
+                int j = -1;
+                for (ColumnInfo column : param.columns) {
+                    if (param.dataClass && column.idGenerator != null)
+                        continue;
+
+                    if (insert || update) {
+                        if (++j != 0) queryBuilder.append(',');
+                    } else {
+                        if (++j != 0) queryBuilder.append(" OR ");
+                    }
+
+                    // Query where with ignore case
+                    if (!update && param.ignoreCase) {
+                        queryBuilder.append("LOWER(");
                         quoteColumnName(queryBuilder, column.columnName);
-                        queryBuilder.append(" IS NOT DISTINCT FROM ?");
-                    } else {
-                        quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
-                    }
-                }
-
-                String argName = param.paramName;
-                // Get field if using data class
-                if (param.dataClass) {
-                    argName += '.' + column.field.getSimpleName().toString();
-                    if (param.isRecord) argName += "()";
-                }
-
-                if (tableConstructor) {
-                    args.add(CodeBlock.of("$L", argName));
-                } else {
-                    if (column.isArray) {
-                        // If enum array exist
-                        if (column.isEnum) {
-                            argName = "var" + tempVarCount;
-                            tempVarCount++;
+                        queryBuilder.append(") ").append(param.whereOperation).append(" LOWER(?)");
+                    } else if (insert)
+                        quoteColumnName(queryBuilder, column.columnName);
+                    else {
+                        if (!update && column.nullable) {
+                            quoteColumnName(queryBuilder, column.columnName);
+                            queryBuilder.append(" IS NOT DISTINCT FROM ?");
+                        } else {
+                            quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
                         }
+                    }
 
-                        args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
-                                SqlParameterValue.class,
-                                java.sql.Types.class,
-                                argName
-                        ));
-                    } else if (column.isEnum) {
-                        if (column.nullable)
-                            args.add(CodeBlock.of("$L == null ? null : $L.name()", argName, argName));
-                        else
-                            args.add(CodeBlock.of("$L.name()", argName));
-                    } else {
+                    String argName = param.paramName;
+                    // Get field if using data class
+                    if (param.dataClass) {
+                        argName += '.' + column.field.getSimpleName().toString();
+                        if (param.isRecord) argName += "()";
+                    }
+
+                    if (tableConstructor) {
                         args.add(CodeBlock.of("$L", argName));
+                    } else {
+                        if (column.isArray) {
+                            // If enum array exist
+                            if (column.isEnum) {
+                                argName = "var" + tempVarCount;
+                                tempVarCount++;
+                            }
+
+                            args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
+                                    SqlParameterValue.class,
+                                    java.sql.Types.class,
+                                    argName
+                            ));
+                        } else if (column.isEnum) {
+                            if (column.nullable)
+                                args.add(CodeBlock.of("$L == null ? null : $L.name()", argName, argName));
+                            else
+                                args.add(CodeBlock.of("$L.name()", argName));
+                        } else {
+                            args.add(CodeBlock.of("$L", argName));
+                        }
                     }
                 }
+                if (!insert && !update && param.columns.size() > 1)
+                    queryBuilder.append(")");
             }
-            if (!insert && !update && param.columns.size() > 1)
-                queryBuilder.append(")");
+            if (insert)
+                queryBuilder.append(')');
         }
-        if (insert)
-            queryBuilder.append(')');
 
         // Appends query SQL and parameters if present
-        if (methodInfo != null && methodInfo.querySql != null) {
+        if (methodInfo != null && methodInfo.querySql != null && methodInfo.querySqlParams != null) {
             if (conditionCount > -1)
                 queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
 
