@@ -553,14 +553,16 @@ public class TableProcessor extends AbstractProcessor {
         }
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
-
+        List<CodeBlock> sqlArgs;
         if (!columnArgs.isEmpty()) {
-            queryWithArgs.args().addAll(columnArgs);
-        }
+            sqlArgs = new ArrayList<>(columnArgs);
+            sqlArgs.addAll(queryWithArgs.args());
+        } else
+            sqlArgs = queryWithArgs.args();
 
         String sql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
-        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), false);
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, false);
 
         typeBuilder.addMethod(methodBuilder.build());
         return false;
