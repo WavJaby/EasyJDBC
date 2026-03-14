@@ -80,4 +80,16 @@ public class TableInfo {
         }
         return sb.append("_UK").toString();
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (!(obj instanceof TableInfo)) return false;
+        return tableFullname.equals(((TableInfo) obj).tableFullname);
+    }
+
+    @Override
+    public int hashCode() {
+        return tableFullname.hashCode();
+    }
 }
