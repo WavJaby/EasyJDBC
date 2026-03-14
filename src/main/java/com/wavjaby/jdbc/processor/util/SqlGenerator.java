@@ -18,10 +18,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
@@ -54,11 +51,12 @@ public class SqlGenerator {
 
         builder.append("CREATE OR REPLACE VIEW ").append(tableInfo.quotedTableFullName).append(" AS SELECT ");
         boolean first = true;
+        Map<TableData, List<ColumnInfo>> joinInfoMap = new LinkedHashMap<>();
         for (ColumnInfo columnInfo : tableData.tableFields.values()) {
             if (!first) builder.append(',');
             first = false;
 
-            String targetTableFullName = base.tableInfo.equals(columnInfo.tableInfo)
+            String targetTableFullName = base.equals(columnInfo.tableData)
                     ? baseTableShortName : columnInfo.tableInfo.quotedTableFullName;
 
             if (columnInfo.defaultValue != null)
@@ -69,19 +67,36 @@ public class SqlGenerator {
             if (columnInfo.defaultValue != null)
                 builder.append(", ").append(columnInfo.defaultValue).append(") as ").append(columnInfo.quotedColumnName);
 
-            // Build join part
+            // Add reference column join info
             if (columnInfo.joinColumn != null) {
-                ColumnInfo referenceColumn = columnInfo.getReferencedColumnInfo();
-                TableData referenceTable = columnInfo.getReferencedTableData();
-                String referenceTableFullName = base.tableInfo.equals(referenceTable.tableInfo)
-                        ? baseTableShortName : referenceTable.tableInfo.quotedTableFullName;
+                ColumnInfo referenceColumn = columnInfo.getReferencedColumn();
+                List<ColumnInfo> columnJoinInfo = joinInfoMap.computeIfAbsent(referenceColumn.tableData, k -> new ArrayList<>());
+                columnJoinInfo.add(columnInfo);
+            }
+        }
+        // Build join part
+        for (Map.Entry<TableData, List<ColumnInfo>> entry : joinInfoMap.entrySet()) {
+            TableData referenceTable = entry.getKey();
+            String referenceTableFullName = base.equals(referenceTable)
+                    ? baseTableShortName : referenceTable.tableInfo.quotedTableFullName;
+            joinSql.append("\n");
+            joinSql.append("    LEFT JOIN ").append(referenceTableFullName).append(" ON ");
 
-                joinSql.append("\n");
-                joinSql.append("    LEFT JOIN ").append(referenceTableFullName).append(" ON ")
-                        .append(targetTableFullName).append('.').append(columnInfo.quotedColumnName).append('=')
+            boolean firstJoin = true;
+            for (ColumnInfo columnInfo : entry.getValue()) {
+                String targetTableFullName = base.equals(columnInfo.tableData)
+                        ? baseTableShortName : columnInfo.tableInfo.quotedTableFullName;
+
+                ColumnInfo referenceColumn = columnInfo.getReferencedColumn();
+
+                if (!firstJoin)
+                    joinSql.append(" AND ");
+                firstJoin = false;
+                joinSql.append(targetTableFullName).append('.').append(columnInfo.quotedColumnName).append('=')
                         .append(referenceTableFullName).append('.').append(referenceColumn.quotedColumnName);
             }
         }
+
         builder.append("\n");
         builder.append("    FROM ").append(base.tableInfo.quotedTableFullName).append(" ").append(baseTableShortName);
         builder.append(joinSql);
