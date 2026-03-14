@@ -63,7 +63,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
 
         Parameter[] parameters = constructor.getParameters();
 
-        SqlRowSet rowSet = jdbc.queryForRowSet("select COLUMN_NAME,ORDINAL_POSITION,DATA_TYPE from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA!='INFORMATION_SCHEMA' and TABLE_NAME=?", tableName);
+        SqlRowSet rowSet = jdbc.queryForRowSet("select COLUMN_NAME,ORDINAL_POSITION,DATA_TYPE from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA!='INFORMATION_SCHEMA' AND TABLE_NAME=?", tableName);
         Map<String, Integer> collumnMap = new HashMap<>();
         while (rowSet.next()) {
             String field = rowSet.getString(1);

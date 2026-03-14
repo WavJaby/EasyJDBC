@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
 public @interface QuerySQL {
     String value();
 
-    String conjunction() default "and";
+    String conjunction() default "AND";
 
     boolean override() default false;
 }
