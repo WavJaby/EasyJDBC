@@ -49,7 +49,7 @@ public class TableData {
 
         // Get field with column info
         for (VariableElement field : fields.values()) {
-            ColumnInfo info = new ColumnInfo(field, tableInfo);
+            ColumnInfo info = new ColumnInfo(field, this);
             if (info.idGenerator != null) {
                 String providerClassPath = info.idGenerator.toString();
                 addDependency(providerClassPath);
@@ -143,16 +143,16 @@ public class TableData {
      */
     public boolean processTableJoin(TableData tableData, Map<String, TableData> tableDataMap, Messager console) {
         for (ColumnInfo column : tableData.tableFields.values()) {
-            if (column.getReferencedColumnInfo() == null) continue;
-            ColumnInfo referencedColumn = column.getReferencedColumnInfo();
+            if (column.getReferencedColumn() == null) continue;
+            ColumnInfo referencedColumn = column.getReferencedColumn();
 
             boolean addToGroup = true;
             for (ColumnInfo target : tableData.tableFields.values()) {
-                if (target.getReferencedColumnInfo() == null) continue;
+                if (target.getReferencedColumn() == null) continue;
                 if (column == target)
                     continue;
 
-                ColumnInfo otherReferencedColumn = target.getReferencedColumnInfo();
+                ColumnInfo otherReferencedColumn = target.getReferencedColumn();
                 if (referencedColumn.tableInfo.equals(otherReferencedColumn.tableInfo) &&
                         referencedColumn.columnName.equals(otherReferencedColumn.columnName))
                     addToGroup = false;
@@ -205,7 +205,7 @@ public class TableData {
                 return true;
             }
 
-            referencedTables.put(info.referencedTableClassPath, info.getReferencedTableData());
+            referencedTables.put(info.referencedTableClassPath, info.getReferencedColumn().tableData);
         }
 
         for (ColumnInfo info : tableData.tableFields.values()) {
@@ -222,9 +222,9 @@ public class TableData {
             }
 
             // Redirect field table to target table
-            targetColumn = new ColumnInfo(info.field, targetColumn.tableInfo);
+            targetColumn = new ColumnInfo(info.field, targetColumn.tableData);
             if (targetColumn.joinColumn != null)
-                targetColumn.setReferencedInfo(info.getReferencedTableData(), info.getReferencedColumnInfo());
+                targetColumn.setReferencedColumn(info.getReferencedColumn());
 
             tableColumns.put(info.columnName, targetColumn);
             tableFields.put(fieldName, targetColumn);
@@ -253,5 +253,17 @@ public class TableData {
 
     public TableData getVirtualBaseTableData() {
         return virtualBaseTableData;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (super.equals(obj)) return true;
+        if (!(obj instanceof TableData)) return false;
+        return tableInfo.equals(((TableData) obj).tableInfo);
+    }
+
+    @Override
+    public int hashCode() {
+        return tableInfo.hashCode();
     }
 }

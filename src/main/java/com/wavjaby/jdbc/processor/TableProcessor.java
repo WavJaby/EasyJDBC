@@ -107,9 +107,9 @@ public class TableProcessor extends AbstractProcessor {
         if (data.tableInfo.isVirtual)
             processTableDependency(data.getVirtualBaseTableData(), tableDataMap, dependency);
         for (ColumnInfo info : data.tableFields.values()) {
-            TableData refrenceTableData = info.getReferencedTableData();
-            if (refrenceTableData != null && !dependency.containsKey(info.referencedTableClassPath))
-                processTableDependency(refrenceTableData, tableDataMap, dependency);
+            ColumnInfo referencedColumn = info.getReferencedColumn();
+            if (referencedColumn != null && !dependency.containsKey(info.referencedTableClassPath))
+                processTableDependency(referencedColumn.tableData, tableDataMap, dependency);
         }
         dependency.put(data.tableInfo.classPath, data);
     }

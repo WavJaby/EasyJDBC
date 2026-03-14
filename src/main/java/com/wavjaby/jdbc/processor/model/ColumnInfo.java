@@ -20,6 +20,7 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 public class ColumnInfo {
     public final Column column;
     public final TableInfo tableInfo;
+    public final TableData tableData;
 
     public final VariableElement field;
     public final TypeMirror type;
@@ -40,12 +41,12 @@ public class ColumnInfo {
 
     public final JoinColumn joinColumn;
     public final String referencedTableClassPath;
-    private TableData referencedTableData;
-    private ColumnInfo referencedColumnInfo;
+    private ColumnInfo referencedColumn;
 
-    public ColumnInfo(VariableElement field, TableInfo tableInfo) {
+    public ColumnInfo(VariableElement field, TableData tableData) {
         this.column = field.getAnnotation(Column.class);
-        this.tableInfo = tableInfo;
+        this.tableInfo = tableData.tableInfo;
+        this.tableData = tableData;
         this.field = field;
 
         // Get GeneratedValue
@@ -202,23 +203,17 @@ public class ColumnInfo {
                 return true;
             }
         }
-        this.referencedTableData = refrenceTableData;
-        this.referencedColumnInfo = referencedColumnInfo;
+        this.referencedColumn = referencedColumnInfo;
 
         return false;
     }
 
-    public void setReferencedInfo(TableData referencedTableData, ColumnInfo referencedColumnInfo) {
-        this.referencedTableData = referencedTableData;
-        this.referencedColumnInfo = referencedColumnInfo;
+    public void setReferencedColumn(ColumnInfo referencedColumnInfo) {
+        this.referencedColumn = referencedColumnInfo;
     }
 
-    public ColumnInfo getReferencedColumnInfo() {
-        return referencedColumnInfo;
-    }
-
-    public TableData getReferencedTableData() {
-        return referencedTableData;
+    public ColumnInfo getReferencedColumn() {
+        return referencedColumn;
     }
 
     public String getForeignKeyName() {
