@@ -118,7 +118,7 @@ public class SqlGenerator {
             builder.append(" PRIMARY KEY(");
             for (int i = 0; i < tableData.primaryKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(tableData.primaryKey.get(i).columnName.toLowerCase());
+                builder.append(tableData.primaryKey.get(i).columnName);
             }
             builder.append(")");
         }
@@ -127,7 +127,7 @@ public class SqlGenerator {
             builder.append("    CONSTRAINT").append(tableInfo.getUniqueKey(uniqueKey)).append(" UNIQUE (");
             for (int i = 0; i < uniqueKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(uniqueKey.get(i).columnName.toLowerCase());
+                builder.append(uniqueKey.get(i).columnName);
             }
             builder.append(")");
         }
@@ -185,7 +185,7 @@ public class SqlGenerator {
     }
 
     public static StringBuilder quoteColumnName(StringBuilder sb, String columnName) {
-        return sb.append('"').append(columnName.toLowerCase()).append('"');
+        return sb.append('"').append(columnName).append('"');
     }
 
     public static String toSqlType(TypeMirror type, Column column) {

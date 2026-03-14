@@ -26,7 +26,7 @@ public class ColumnInfo {
     public final boolean isArray;
     public final boolean isEnum;
 
-    public final String columnName;
+    public final String columnName; // lower snake case
     public final boolean nullable;
     public final boolean isPrimaryKey;
     public final boolean isUniqueKey;
