@@ -452,7 +452,7 @@ public class TableProcessor extends AbstractProcessor {
             methodBuilder.addStatement("batchValues.add(new Object[]{$L})", CodeBlock.join(values.args(), ", "));
             methodBuilder.endControlFlow();
 
-            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + tableInfo.tableFullname.toLowerCase() + values.query());
+            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + tableInfo.quotedTableFullName + values.query());
 
             if (returnInt) {
                 methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
@@ -460,7 +460,7 @@ public class TableProcessor extends AbstractProcessor {
         } else {
             methodBuilder.addCode(idGenerator);
             methodBuilder.addCode(enumString);
-            String sql = "INSERT INTO " + tableInfo.tableFullname.toLowerCase() + values.query();
+            String sql = "INSERT INTO " + tableInfo.quotedTableFullName + values.query();
 
             if (methodInfo.returns.table()) {
                 if (values.args().isEmpty()) {
@@ -501,7 +501,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "SELECT COUNT(*) FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, true);
 
@@ -516,7 +516,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "SELECT COUNT(*) FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, false);
 
@@ -531,8 +531,9 @@ public class TableProcessor extends AbstractProcessor {
 
         StringBuilder columnQuery = new StringBuilder();
         List<CodeBlock> columnArgs = new ArrayList<>();
-        if (methodInfo.returns.column().columnSqlParams() != null) {
-            for (SqlParamInfo param : methodInfo.returns.column().columnSqlParams()) {
+        MethodInfo.ReturnColumn returnColumn = methodInfo.returns.column();
+        if (returnColumn.columnSqlParams() != null) {
+            for (SqlParamInfo param : returnColumn.columnSqlParams()) {
                 columnQuery.append(param.sqlPart());
                 if (param.paramName() != null) {
                     columnQuery.append('?');
@@ -549,7 +550,7 @@ public class TableProcessor extends AbstractProcessor {
                 }
             }
         } else {
-            SqlGenerator.quoteColumnName(columnQuery, methodInfo.returns.column().column().columnName);
+            columnQuery.append(returnColumn.column().quotedColumnName);
         }
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
@@ -560,7 +561,7 @@ public class TableProcessor extends AbstractProcessor {
         } else
             sqlArgs = queryWithArgs.args();
 
-        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, false);
 
@@ -577,13 +578,13 @@ public class TableProcessor extends AbstractProcessor {
 
         StringBuilder columnQuery = new StringBuilder();
         boolean first = true;
-        for (String name : tableData.tableColumns.keySet()) {
+        for (ColumnInfo column : tableData.tableColumns.values()) {
             if (!first) columnQuery.append(',');
             first = false;
-            SqlGenerator.quoteColumnName(columnQuery, name);
+            columnQuery.append(column.quotedColumnName);
         }
 
-        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), true);
 
@@ -599,7 +600,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "DELETE FROM " + tableInfo.tableFullname.toLowerCase() + queryWithArgs.query();
+        String sql = "DELETE FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, queryWithArgs.args(), methodInfo.returnTypeMirror);
 
@@ -636,7 +637,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
 
-        String sql = "UPDATE " + tableInfo.tableFullname.toLowerCase() + update.query();
+        String sql = "UPDATE " + tableInfo.quotedTableFullName + update.query();
 
         if (methodInfo.returns.table()) {
             if (update.args().isEmpty())
@@ -648,13 +649,13 @@ public class TableProcessor extends AbstractProcessor {
 
             StringBuilder columnQuery = new StringBuilder();
             boolean first = true;
-            for (String name : tableData.tableColumns.keySet()) {
+            for (ColumnInfo column : tableData.tableColumns.values()) {
                 if (!first) columnQuery.append(',');
                 first = false;
-                SqlGenerator.quoteColumnName(columnQuery, name);
+                columnQuery.append(column.quotedColumnName);
             }
 
-            String selectSql = "SELECT " + columnQuery + " FROM " + tableInfo.tableFullname.toLowerCase() + where.query();
+            String selectSql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + where.query();
 
             JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), true);
 

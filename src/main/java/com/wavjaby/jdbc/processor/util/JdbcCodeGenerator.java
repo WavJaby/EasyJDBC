@@ -11,8 +11,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import static com.wavjaby.jdbc.processor.util.SqlGenerator.quoteColumnName;
-
 public class JdbcCodeGenerator {
 
     public record QueryAndArgs(StringBuilder query, List<CodeBlock> args) {
@@ -56,18 +54,12 @@ public class JdbcCodeGenerator {
 
                     // Query where with ignore case
                     if (!update && param.ignoreCase) {
-                        queryBuilder.append("LOWER(");
-                        quoteColumnName(queryBuilder, column.columnName);
-                        queryBuilder.append(") ").append(param.whereOperation).append(" LOWER(?)");
-                    } else if (insert)
-                        quoteColumnName(queryBuilder, column.columnName);
-                    else {
-                        if (!update && column.nullable) {
-                            quoteColumnName(queryBuilder, column.columnName);
-                            queryBuilder.append(" IS NOT DISTINCT FROM ?");
-                        } else {
-                            quoteColumnName(queryBuilder, column.columnName).append(param.whereOperation).append('?');
-                        }
+                        queryBuilder.append("LOWER(").append(column.quotedColumnName).append(") ").append(param.whereOperation).append(" LOWER(?)");
+                    } else if (insert) {
+                        queryBuilder.append(column.quotedColumnName);
+                    } else {
+                        queryBuilder.append(column.quotedColumnName)
+                                .append(!update && column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?');
                     }
 
                     String argName = param.paramName;

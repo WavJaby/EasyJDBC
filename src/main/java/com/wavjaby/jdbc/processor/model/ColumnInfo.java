@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.annotation.*;
+import com.wavjaby.jdbc.processor.util.SqlGenerator;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;
@@ -27,6 +28,7 @@ public class ColumnInfo {
     public final boolean isEnum;
 
     public final String columnName; // lower snake case
+    public final String quotedColumnName;
     public final boolean nullable;
     public final boolean isPrimaryKey;
     public final boolean isUniqueKey;
@@ -97,6 +99,7 @@ public class ColumnInfo {
         ColumnDefault columnDefault = field.getAnnotation(ColumnDefault.class);
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
         this.columnName = getColumnName(field);
+        this.quotedColumnName = SqlGenerator.quoteColumnName(this.columnName);
 
         boolean isUniqueKey = false;
         boolean isGroupedUniqueKey = false;

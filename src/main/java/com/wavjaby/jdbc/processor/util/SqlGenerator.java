@@ -1,10 +1,10 @@
 package com.wavjaby.jdbc.processor.util;
 
+import com.wavjaby.jdbc.annotation.Column;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
-import com.wavjaby.jdbc.annotation.Column;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.ElementKind;
@@ -14,14 +14,36 @@ import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import java.util.ArrayList;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {
+    private static final Set<String> reservedWords = readResource("/sqlReservedWords.txt");
+    private static final Set<String> unreservedWords = readResource("/sqlUnreservedWords.txt");
+    private static final Set<String> reservedColumnNames = readResource("/sqlReservedColumnNames.txt");
+    private static final Set<String> reservedTypeFuncNames = readResource("/sqlReservedTypeFuncNames.txt");
+
+    private static Set<String> readResource(String path) {
+        try (InputStream stream = Objects.requireNonNull(SqlGenerator.class.getResourceAsStream(path));
+             BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
+            return reader.lines()
+                    .map(String::trim)
+                    .map(String::toLowerCase)
+                    .collect(Collectors.toSet());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read resource: " + path, e);
+        }
+    }
 
     public static boolean generateCreateViewSql(TableData tableData, StringBuilder builder, Messager console) {
         TableInfo tableInfo = tableData.tableInfo;
@@ -30,42 +52,38 @@ public class SqlGenerator {
 
         StringBuilder joinSql = new StringBuilder();
 
-        builder.append("CREATE OR REPLACE VIEW ");
-        if (tableInfo.schema != null) builder.append(tableInfo.schema).append('.');
-        builder.append(tableInfo.name).append(" AS SELECT ");
+        builder.append("CREATE OR REPLACE VIEW ").append(tableInfo.quotedTableFullName).append(" AS SELECT ");
         boolean first = true;
         for (ColumnInfo columnInfo : tableData.tableFields.values()) {
             if (!first) builder.append(',');
             first = false;
 
             String targetTableFullName = base.tableInfo.equals(columnInfo.tableInfo)
-                    ? baseTableShortName: columnInfo.tableInfo.tableFullname;
+                    ? baseTableShortName : columnInfo.tableInfo.quotedTableFullName;
 
             if (columnInfo.defaultValue != null)
                 builder.append("COALESCE(");
 
-            builder.append(targetTableFullName).append('.').append(columnInfo.columnName);
+            builder.append(targetTableFullName).append('.').append(columnInfo.quotedColumnName);
 
             if (columnInfo.defaultValue != null)
-                builder.append(", ").append(columnInfo.defaultValue).append(") as ").append(columnInfo.columnName);
+                builder.append(", ").append(columnInfo.defaultValue).append(") as ").append(columnInfo.quotedColumnName);
 
             // Build join part
             if (columnInfo.joinColumn != null) {
                 ColumnInfo referenceColumn = columnInfo.getReferencedColumnInfo();
                 TableData referenceTable = columnInfo.getReferencedTableData();
                 String referenceTableFullName = base.tableInfo.equals(referenceTable.tableInfo)
-                        ? baseTableShortName : referenceTable.tableInfo.tableFullname;
+                        ? baseTableShortName : referenceTable.tableInfo.quotedTableFullName;
 
                 joinSql.append("\n");
                 joinSql.append("    LEFT JOIN ").append(referenceTableFullName).append(" ON ")
-                        .append(targetTableFullName).append('.').append(columnInfo.columnName).append('=')
-                        .append(referenceTableFullName).append('.').append(referenceColumn.columnName);
+                        .append(targetTableFullName).append('.').append(columnInfo.quotedColumnName).append('=')
+                        .append(referenceTableFullName).append('.').append(referenceColumn.quotedColumnName);
             }
         }
         builder.append("\n");
-        builder.append("    FROM ");
-        if (base.tableInfo.schema != null) builder.append(base.tableInfo.schema).append(".");
-        builder.append(base.tableInfo.name).append(" ").append(baseTableShortName);
+        builder.append("    FROM ").append(base.tableInfo.quotedTableFullName).append(" ").append(baseTableShortName);
         builder.append(joinSql);
         builder.append(";");
 
@@ -74,9 +92,7 @@ public class SqlGenerator {
 
     public static boolean generateCreateTableSql(TableData tableData, StringBuilder builder, Messager console) {
         TableInfo tableInfo = tableData.tableInfo;
-        builder.append("CREATE TABLE IF NOT EXISTS ");
-        if (tableInfo.schema != null) builder.append(tableInfo.schema).append('.');
-        builder.append(tableInfo.name).append("(");
+        builder.append("CREATE TABLE IF NOT EXISTS ").append(tableInfo.quotedTableFullName).append("(");
         boolean first = true;
         for (Map.Entry<String, ColumnInfo> entry : tableData.tableFields.entrySet()) {
             ColumnInfo columnInfo = entry.getValue();
@@ -88,8 +104,7 @@ public class SqlGenerator {
             boolean columnDef = columnInfo.column != null;
 
             // column name
-            builder.append("    ");
-            quoteColumnName(builder, columnInfo.columnName);
+            builder.append("    ").append(columnInfo.quotedColumnName);
 
             // If column define by user
             if (columnDef && !columnInfo.column.columnDefinition().isEmpty()) {
@@ -118,7 +133,7 @@ public class SqlGenerator {
             builder.append(" PRIMARY KEY(");
             for (int i = 0; i < tableData.primaryKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(tableData.primaryKey.get(i).columnName);
+                builder.append(tableData.primaryKey.get(i).quotedColumnName);
             }
             builder.append(")");
         }
@@ -127,7 +142,7 @@ public class SqlGenerator {
             builder.append("    CONSTRAINT").append(tableInfo.getUniqueKey(uniqueKey)).append(" UNIQUE (");
             for (int i = 0; i < uniqueKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(uniqueKey.get(i).columnName);
+                builder.append(uniqueKey.get(i).quotedColumnName);
             }
             builder.append(")");
         }
@@ -174,7 +189,7 @@ public class SqlGenerator {
             builder.append(" ORDER BY ");
             for (int i = 0; i < methodInfo.orderBy.length; i++) {
                 ColumnInfo column = methodInfo.orderBy[i].column();
-                builder.append(column.columnName).append(" ").append(methodInfo.orderBy[i].direction().name());
+                builder.append(column.quotedColumnName).append(" ").append(methodInfo.orderBy[i].direction().name());
                 if (i < methodInfo.orderBy.length - 1)
                     builder.append(", ");
             }
@@ -184,8 +199,16 @@ public class SqlGenerator {
         return builder;
     }
 
-    public static StringBuilder quoteColumnName(StringBuilder sb, String columnName) {
-        return sb.append('"').append(columnName).append('"');
+    public static String quoteColumnName(String columnName) {
+        if (reservedWords.contains(columnName) || reservedColumnNames.contains(columnName) || reservedTypeFuncNames.contains(columnName))
+            return '"' + columnName + '"';
+        return columnName;
+    }
+
+    public static String quoteSchemaTableName(String tableName) {
+        if (reservedWords.contains(tableName) || reservedTypeFuncNames.contains(tableName) || unreservedWords.contains(tableName))
+            return '"' + tableName + '"';
+        return tableName;
     }
 
     public static String toSqlType(TypeMirror type, Column column) {

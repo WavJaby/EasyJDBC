@@ -46,7 +46,8 @@ public class MethodInfo {
     public final NotFoundException notFound;
 
     // Return type
-    public ReturnInfo returns;
+    @NonNull
+    public final ReturnInfo returns;
 
     // Insert method
     public final boolean batchInsert;
