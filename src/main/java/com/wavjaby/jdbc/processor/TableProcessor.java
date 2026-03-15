@@ -33,7 +33,7 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 
 
 @AutoService(Processor.class)
-@SupportedSourceVersion(SourceVersion.RELEASE_17)
+@SupportedSourceVersion(SourceVersion.RELEASE_21)
 @SupportedAnnotationTypes("com.wavjaby.jdbc.annotation.Table")
 @SuppressWarnings("unused")
 public class TableProcessor extends AbstractProcessor {
