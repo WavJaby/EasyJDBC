@@ -101,9 +101,23 @@ public class JdbcCodeGenerator {
                 queryBuilder.append(')');
         }
 
+        // Append insert variables
+        if (methodInfo != null && insert) {
+            queryBuilder.append("VALUES(");
+            boolean first = true;
+            for (MethodParamInfo info : methodInfo.params) {
+                for (int i = 0; i < info.columns.size(); i++) {
+                    if (!first) queryBuilder.append(',');
+                    first = false;
+                    queryBuilder.append('?');
+                }
+            }
+            queryBuilder.append(')');
+        }
+
         // Appends query SQL and parameters if present
         if (methodInfo != null && methodInfo.querySql != null && methodInfo.querySqlParams != null) {
-            if (conditionCount > -1)
+            if (conditionCount > -1 && !insert)
                 queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
 
             for (SqlParamInfo sqlParam : methodInfo.querySqlParams) {

@@ -425,20 +425,7 @@ public class TableProcessor extends AbstractProcessor {
         CodeBlock idGenerator = JdbcCodeGenerator.addIdGenerator(tableData, infos);
         CodeBlock enumString = JdbcCodeGenerator.checkAndConvertEnumToStringArray(infos);
 
-        JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.getQueryAndArgs(infos, null, true, false, null, ",", false, tableData);
-
-        // Append variable values
-        values.query().append(" VALUES (");
-        boolean first = true;
-        for (MethodParamInfo info : methodInfo.params) {
-            for (ColumnInfo column : info.columns) {
-                if (!first) values.query().append(',');
-                values.query().append('?');
-                first = false;
-            }
-        }
-        values.query().append(')');
-
+        JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.getQueryAndArgs(infos, methodInfo, true, false, null, ",", false, tableData);
 
         if (methodInfo.batchInsert) {
             MethodParamInfo param = methodInfo.params.get(0);
