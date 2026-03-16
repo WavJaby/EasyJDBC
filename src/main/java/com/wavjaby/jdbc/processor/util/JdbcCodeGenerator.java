@@ -72,26 +72,13 @@ public class JdbcCodeGenerator {
                     if (tableConstructor) {
                         args.add(CodeBlock.of("$L", argName));
                     } else {
-                        if (column.isArray) {
-                            // If enum array exist
-                            if (column.isEnum) {
-                                argName = "var" + tempVarCount;
-                                tempVarCount++;
-                            }
-
-                            args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
-                                    SqlParameterValue.class,
-                                    java.sql.Types.class,
-                                    argName
-                            ));
-                        } else if (column.isEnum) {
-                            if (column.nullable)
-                                args.add(CodeBlock.of("$L == null ? null : $L.name()", argName, argName));
-                            else
-                                args.add(CodeBlock.of("$L.name()", argName));
-                        } else {
-                            args.add(CodeBlock.of("$L", argName));
+                        // If enum array exists, use pre-calculated variable
+                        if (column.isArray && column.isEnum) {
+                            argName = "var" + tempVarCount;
+                            tempVarCount++;
                         }
+
+                        appendArgs(args, argName, column.isArray, column.isEnum, column.nullable);
                     }
                 }
                 if (!insert && !update && param.columns.size() > 1)
@@ -127,20 +114,31 @@ public class JdbcCodeGenerator {
                 queryBuilder.append('?');
 
                 MethodParamInfo methodParam = sqlParam.methodParamInfo();
+                boolean isArray = methodParam != null && methodParam.parameter.asType() instanceof ArrayType;
+                boolean isEnum = methodParam != null && methodParam.parameter.asType() instanceof DeclaredType declaredType &&
+                        declaredType.asElement().getKind() == ElementKind.ENUM;
 
-                if (methodParam != null && methodParam.parameter.asType() instanceof ArrayType) {
-                    args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
-                            SqlParameterValue.class,
-                            java.sql.Types.class,
-                            sqlParam.paramName()
-                    ));
-                } else {
-                    args.add(CodeBlock.of("$L", sqlParam.paramName()));
-                }
-
+                appendArgs(args, sqlParam.paramName(), isArray, isEnum, true);
             }
         }
         return new QueryAndArgs(queryBuilder, args);
+    }
+
+    private static void appendArgs(List<CodeBlock> args, String argName, boolean isArray, boolean isEnum, boolean nullable) {
+        if (isArray) {
+            args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
+                    SqlParameterValue.class,
+                    java.sql.Types.class,
+                    argName
+            ));
+        } else if (isEnum) {
+            if (nullable)
+                args.add(CodeBlock.of("$L == null ? null : $L.name()", argName, argName));
+            else
+                args.add(CodeBlock.of("$L.name()", argName));
+        } else {
+            args.add(CodeBlock.of("$L", argName));
+        }
     }
 
     public static QueryAndArgs updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, MethodInfo methodInfo, TableData tableData) {
