@@ -370,8 +370,13 @@ public class TableProcessor extends AbstractProcessor {
                         return true;
                     continue;
                 }
+                else if (method.insertMethod) {
+                    if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
+                        return true;
+                    continue;
+                }
 
-                console.printMessage(ERROR, "Only update method allow return void, method: " + method.method, method.method);
+                console.printMessage(ERROR, "Only insert, update method allow return void, method: " + method.method, method.method);
                 return true;
             }
 
@@ -441,38 +446,25 @@ public class TableProcessor extends AbstractProcessor {
 
             methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + tableInfo.quotedTableFullName + values.query());
 
-            if (returnInt) {
+            if (returnInt)
                 methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
-            }
         } else {
             methodBuilder.addCode(idGenerator);
             methodBuilder.addCode(enumString);
             String sql = "INSERT INTO " + tableInfo.quotedTableFullName + values.query();
 
-            if (methodInfo.returns.table()) {
-                if (values.args().isEmpty()) {
-                    methodBuilder.addStatement("jdbc.update($S)", sql);
-                } else {
-                    methodBuilder.addStatement("jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
-                }
+            if (returnInt && !methodInfo.returns.table())
+                methodBuilder.addStatement("return ");
 
-                JdbcCodeGenerator.QueryAndArgs returnValues = JdbcCodeGenerator.getQueryAndArgs(infos, null, false, true, null, ",", true, tableData);
-
-                methodBuilder.addStatement("return new $T($L)", ClassName.bestGuess(tableInfo.className), CodeBlock.join(returnValues.args(), ", "));
+            if (values.args().isEmpty()) {
+                methodBuilder.addStatement("jdbc.update($S)", sql);
             } else {
-                if (returnInt) {
-                    if (values.args().isEmpty()) {
-                        methodBuilder.addStatement("return jdbc.update($S)", sql);
-                    } else {
-                        methodBuilder.addStatement("return jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
-                    }
-                } else {
-                    if (values.args().isEmpty()) {
-                        methodBuilder.addStatement("jdbc.update($S)", sql);
-                    } else {
-                        methodBuilder.addStatement("jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
-                    }
-                }
+                methodBuilder.addStatement("jdbc.update($S, $L)", sql, CodeBlock.join(values.args(), ", "));
+            }
+
+            if (methodInfo.returns.table()) {
+                JdbcCodeGenerator.QueryAndArgs returnValues = JdbcCodeGenerator.getQueryAndArgs(infos, null, false, true, null, ",", true, tableData);
+                methodBuilder.addStatement("return new $T($L)", ClassName.bestGuess(tableInfo.className), CodeBlock.join(returnValues.args(), ", "));
             }
         }
 
