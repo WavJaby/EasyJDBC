@@ -21,7 +21,6 @@ import java.io.InputStreamReader;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {
@@ -167,15 +166,8 @@ public class SqlGenerator {
 
             builder.append(",\n");
             builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
-                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ");
-            // If main table have schema, referenced table have to specify as well
-            if (tableInfo.schema != null || foreignKeyGroup.referencedTable().schema != null) {
-                String referencedTableSchema = foreignKeyGroup.referencedTable().schema;
-                if (referencedTableSchema == null)
-                    referencedTableSchema = convertPropertyNameToUnderscoreName("PUBLIC").toLowerCase();
-                builder.append(referencedTableSchema).append('.');
-            }
-            builder.append(foreignKeyGroup.referencedTable().name.toLowerCase()).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
+                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ")
+                    .append(foreignKeyGroup.referencedTable().quotedTableFullName).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
         }
 
         builder.append("\n);");
@@ -244,7 +236,8 @@ public class SqlGenerator {
             else if (declaredType.asElement().toString().equals(List.class.getName())) {
                 TypeMirror componentType = declaredType.getTypeArguments().get(0);
                 return toSqlType(componentType, column) + " ARRAY";
-            } else if (type.toString().equals(java.sql.Date.class.getName())) {
+            } else if (type.toString().equals(java.sql.Date.class.getName()) ||
+                    type.toString().equals(java.time.LocalDate.class.getName())) {
                 return "DATE";
             } else if (type.toString().equals(java.sql.Timestamp.class.getName())) {
                 return "TIMESTAMP";
