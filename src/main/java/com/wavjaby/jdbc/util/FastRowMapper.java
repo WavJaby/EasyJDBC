@@ -110,8 +110,7 @@ public class FastRowMapper<T> implements RowMapper<T> {
 
     public static void extractClassFields(Class<?> mappedClass, Map<String, Field> fields) {
         Class<?> superclass = mappedClass.getSuperclass();
-        if (!superclass.getName().startsWith("java.lang.") &&
-                !superclass.getName().startsWith("java.sql."))
+        if (!superclass.getName().startsWith("java."))
             extractClassFields(superclass, fields);
         for (Field field : mappedClass.getDeclaredFields()) {
             if (isStatic(field.getModifiers()))

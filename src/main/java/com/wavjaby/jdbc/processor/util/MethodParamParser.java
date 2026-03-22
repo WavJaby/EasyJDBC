@@ -79,9 +79,7 @@ public class MethodParamParser {
         // Process class data
         if ((parameter.asType() instanceof DeclaredType declaredType) &&
                 !declaredType.asElement().getKind().equals(ElementKind.ENUM) &&
-                !declaredType.toString().startsWith("java.lang.") &&
-                !declaredType.toString().startsWith("java.sql.") &&
-                !declaredType.toString().startsWith("java.io.")) {
+                !declaredType.toString().startsWith("java.")) {
             TypeElement typeElement = (TypeElement) declaredType.asElement();
             return addClassFieldsColumn(typeElement, parameterName, parameter);
         }

@@ -137,8 +137,7 @@ public class AnnotationHelper {
     public static void extractClassFields(TypeElement element, Map<String, VariableElement> fields) {
         if (element.getSuperclass().getKind() != TypeKind.NONE) {
             DeclaredType superclass = (DeclaredType) element.getSuperclass();
-            if (!superclass.toString().startsWith("java.lang.") &&
-                    !superclass.toString().startsWith("java.sql."))
+            if (!superclass.toString().startsWith("java."))
                 extractClassFields((TypeElement) superclass.asElement(), fields);
         }
         for (Element i : element.getEnclosedElements()) {
@@ -159,8 +158,7 @@ public class AnnotationHelper {
     public static void extractClassMethods(TypeElement element, Map<String, ExecutableElement> methods) {
         if (element.getSuperclass().getKind() != TypeKind.NONE) {
             DeclaredType superclass = (DeclaredType) element.getSuperclass();
-            if (!superclass.toString().startsWith("java.lang.") &&
-                    !superclass.toString().startsWith("java.sql."))
+            if (!superclass.toString().startsWith("java."))
                 extractClassMethods((TypeElement) superclass.asElement(), methods);
         }
         for (TypeMirror parentClass : element.getInterfaces()) {
