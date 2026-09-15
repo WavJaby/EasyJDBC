@@ -28,8 +28,10 @@ public class Snowflake implements IdentifierGenerator {
     private long lastTimestamp;
     private long sequence = 0;
 
+    public static final long DEFAULT_EPOCH = 1704067200000L; // 2024-01-01 00:00:00+00:00
+
     public Snowflake() throws SocketException, UnknownHostException {
-        this.epoch = 1704067200000L; // 2024-01-01 00:00:00+00:00
+        this.epoch = DEFAULT_EPOCH;
 
         long generatedWorkerId;
         try {
@@ -82,6 +84,14 @@ public class Snowflake implements IdentifierGenerator {
         return ((timestamp - epoch) << timestampLeftShift) |
                (workerId << workerIdShift) |
                sequence;
+    }
+
+    public static long getTimeMillis(long id) {
+        return getTimeMillis(id, DEFAULT_EPOCH);
+    }
+
+    public static long getTimeMillis(long id, long epoch) {
+        return (id >>> timestampLeftShift) + epoch;
     }
 
     private long generateFallbackWorkerId(InetAddress localHost) {
