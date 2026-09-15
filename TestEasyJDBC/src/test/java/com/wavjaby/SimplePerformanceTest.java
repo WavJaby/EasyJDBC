@@ -64,7 +64,7 @@ public class SimplePerformanceTest {
 
                 // Insert a device for each user with a unique ID
                 Device device = new Device(i + 1, user.userId(), "Device" + i, 1.2 + i,
-                        "SN" + i, "Model" + i, "Manufacturer" + i, null, null, true, 1, "Description" + i);
+                        DeviceType.LAPTOP, DeviceType.LAPTOP, "SN" + i, "Model" + i, "Manufacturer" + i, null, null, true, 1, "Description" + i);
                 easyJdbcDeviceRepository.addDevice(device);
             }
 

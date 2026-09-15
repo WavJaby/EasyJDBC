@@ -18,6 +18,13 @@ public record Device(
         @Column(precision = 10, scale = 6)
         double numeric,
 
+        // Store enum type as string
+        @Column(length = 32)
+        DeviceType typeString,
+
+        // Store in PostgreSQL enum type
+        DeviceType type,
+
         String serialNumber,
         String model,
         String manufacturer,

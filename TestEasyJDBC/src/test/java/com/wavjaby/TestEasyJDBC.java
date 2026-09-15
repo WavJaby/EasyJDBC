@@ -2,7 +2,6 @@ package com.wavjaby;
 
 import com.wavjaby.db.*;
 import com.wavjaby.jdbc.util.RepositoryInit;
-import com.wavjaby.jdbc.util.Snowflake;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,9 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 
 @SpringBootTest(classes = {
@@ -49,13 +46,13 @@ public class TestEasyJDBC {
     @Test
     public void databaseTest() {
         // Create and add test user
-        User user = new User(-1, "username", "password", "firstname", "lastname", "01234", (byte) 0, 
-            new String[]{"username@example.com"}, "Test Address", null, null, true, 0, 0.0, null);
+        User user = new User(-1, "username", "password", "firstname", "lastname", "01234", (byte) 0,
+                new String[]{"username@example.com"}, "Test Address", null, null, true, 0, 0.0, null);
         user = usersRepository.save(user);
 
         // Add device for user
-        Device device = new Device(123, user.userId(), "name", 1.2, 
-            "SN123", "TestModel", "TestManufacturer", null, null, true, 1, "Test device");
+        Device device = new Device(123, user.userId(), "name", 1.2,
+                DeviceType.LAPTOP, DeviceType.LAPTOP, "SN123", "TestModel", "TestManufacturer", null, null, true, 1, "Test device");
         device = deviceRepository.addDevice(device);
 
         // Get device by id
