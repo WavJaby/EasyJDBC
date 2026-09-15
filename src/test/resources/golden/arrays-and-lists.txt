@@ -1,0 +1,96 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS bag(
+            id BIGINT NOT NULL,
+            tags VARCHAR ARRAY,
+            boxed_ids BIGINT ARRAY,
+            tag_list VARCHAR ARRAY,
+            id_list BIGINT ARRAY,
+            bounded_tags VARCHAR(8) ARRAY,
+            payload BYTEA,
+            CONSTRAINT bag_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/BagRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.sql.Types;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class BagRepositoryImpl implements BagRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Bag> tableMapper;
+
+  public BagRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Bag.class, 7);
+  }
+
+  @Override
+  public Bag save(Bag row) {
+    jdbc.update("INSERT INTO bag (id,tags,boxed_ids,tag_list,id_list,bounded_tags,payload)VALUES(?,?,?,?,?,?,?)", row.id(), new SqlParameterValue(Types.ARRAY, row.tags()), new SqlParameterValue(Types.ARRAY, row.boxedIds()), new SqlParameterValue(Types.ARRAY, row.tagList()), new SqlParameterValue(Types.ARRAY, row.idList()), new SqlParameterValue(Types.ARRAY, row.boundedTags()), row.payload());
+    return new Bag(row.id(), row.tags(), row.boxedIds(), row.tagList(), row.idList(), row.boundedTags(), row.payload());
+  }
+
+  @Override
+  public Bag getById(long id) {
+    List<Bag> result = jdbc.query("SELECT id,tags,boxed_ids,tag_list,id_list,bounded_tags,payload FROM bag WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<String[]> getAllTags() {
+    return jdbc.queryForList("SELECT tags FROM bag", String[].class);
+  }
+
+  @Override
+  public String[] getTagsById(long id) {
+    List<String[]> result = jdbc.queryForList("SELECT tags FROM bag WHERE id=?", String[].class, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<String> getTagListById(long id) {
+    return jdbc.queryForList("SELECT tag_list FROM bag WHERE id=?", String.class, id);
+  }
+}

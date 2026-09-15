@@ -1,0 +1,125 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS edge(
+            left_id BIGINT NOT NULL,
+            right_id BIGINT NOT NULL,
+            accepted BOOLEAN,
+            weight INTEGER NOT NULL,
+            CONSTRAINT edge_left_id_right_id_UK UNIQUE (left_id,right_id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/EdgeRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Boolean;
+import java.lang.Integer;
+import java.lang.Long;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class EdgeRepositoryImpl implements EdgeRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Edge> tableMapper;
+
+  public EdgeRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Edge.class, 4);
+  }
+
+  @Override
+  public Edge save(Edge row) {
+    jdbc.update("INSERT INTO edge (left_id,right_id,accepted,weight)VALUES(?,?,?,?)", row.leftId(), row.rightId(), row.accepted(), row.weight());
+    return new Edge(row.leftId(), row.rightId(), row.accepted(), row.weight());
+  }
+
+  @Override
+  public List<Edge> getPending() {
+    return jdbc.query("SELECT left_id,right_id,accepted,weight FROM edge WHERE ACCEPTED IS NULL", tableMapper);
+  }
+
+  @Override
+  public List<Edge> getHeavierThan(int minWeight) {
+    return jdbc.query("SELECT left_id,right_id,accepted,weight FROM edge WHERE WEIGHT > ?", tableMapper, minWeight);
+  }
+
+  @Override
+  public List<Edge> getTouching(long id) {
+    return jdbc.query("SELECT left_id,right_id,accepted,weight FROM edge WHERE LEFT_ID = ? OR RIGHT_ID = ?", tableMapper, id, id);
+  }
+
+  @Override
+  public List<Edge> getAcceptedFor(long id) {
+    return jdbc.query("SELECT left_id,right_id,accepted,weight FROM edge WHERE (left_id=? OR right_id=?) AND ACCEPTED = TRUE", tableMapper, id, id);
+  }
+
+  @Override
+  public List<Long> getNeighbourIds(long id) {
+    return jdbc.queryForList("SELECT CASE WHEN LEFT_ID = ? THEN RIGHT_ID ELSE LEFT_ID END FROM edge WHERE (left_id=? OR right_id=?) AND ACCEPTED = TRUE", Long.class, id, id, id);
+  }
+
+  @Override
+  public List<Integer> getWeightsAbove(int weight) {
+    return jdbc.queryForList("SELECT weight FROM edge WHERE weight>?", Integer.class, weight);
+  }
+
+  @Override
+  public boolean isPending(long leftId, long rightId) {
+    return jdbc.queryForObject("SELECT COUNT(*) FROM edge WHERE left_id=? AND right_id=? AND ACCEPTED IS NULL", int.class, leftId, rightId) > 0;
+  }
+
+  @Override
+  public int countAccepted(long id) {
+    return jdbc.queryForObject("SELECT COUNT(*) FROM edge WHERE ACCEPTED = TRUE AND (LEFT_ID = ? OR RIGHT_ID = ?)", int.class, id, id);
+  }
+
+  @Override
+  public Edge accept(long leftId, long rightId, Boolean accepted) {
+    if (jdbc.update("UPDATE edge SET accepted=? WHERE left_id=? AND right_id=? AND ACCEPTED IS NULL", accepted, leftId, rightId) == 1) {
+      List<Edge> result = jdbc.query("SELECT left_id,right_id,accepted,weight FROM edge WHERE left_id=? AND right_id=?", tableMapper, leftId, rightId);
+      return result.isEmpty() ? null : result.get(0);
+    }
+    return null;
+  }
+
+  @Override
+  public boolean deletePending(long leftId, long rightId) {
+    return jdbc.update("DELETE FROM edge WHERE left_id=? AND right_id=? AND ACCEPTED IS NULL", leftId, rightId) > 0;
+  }
+}

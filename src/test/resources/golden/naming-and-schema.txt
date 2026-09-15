@@ -1,0 +1,91 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("create schema if not exists app;");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS app.reserved_words(
+            id BIGINT NOT NULL,
+            "user" VARCHAR,
+            "select" VARCHAR,
+            "order" VARCHAR,
+            "table" VARCHAR,
+            "between" VARCHAR,
+            "natural" VARCHAR,
+            http_urlconnection VARCHAR,
+            already_snake_case VARCHAR,
+            CONSTRAINT reserved_words_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/ReservedRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ReservedRepositoryImpl implements ReservedRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Reserved> tableMapper;
+
+  public ReservedRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Reserved.class, 9);
+  }
+
+  @Override
+  public Reserved save(Reserved row) {
+    jdbc.update("INSERT INTO app.reserved_words (id,\"user\",\"select\",\"order\",\"table\",\"between\",\"natural\",http_urlconnection,already_snake_case)VALUES(?,?,?,?,?,?,?,?,?)", row.id(), row.user(), row.select(), row.order(), row.table(), row.between(), row.natural(), row.httpURLConnection(), row.alreadySnakeCase());
+    return new Reserved(row.id(), row.user(), row.select(), row.order(), row.table(), row.between(), row.natural(), row.httpURLConnection(), row.alreadySnakeCase());
+  }
+
+  @Override
+  public Reserved getById(long id) {
+    List<Reserved> result = jdbc.query("SELECT id,\"user\",\"select\",\"order\",\"table\",\"between\",\"natural\",http_urlconnection,already_snake_case FROM app.reserved_words WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Reserved> getByUser(String user) {
+    return jdbc.query("SELECT id,\"user\",\"select\",\"order\",\"table\",\"between\",\"natural\",http_urlconnection,already_snake_case FROM app.reserved_words WHERE \"user\" IS NOT DISTINCT FROM ?", tableMapper, user);
+  }
+
+  @Override
+  public List<Reserved> getBySelect(String select) {
+    return jdbc.query("SELECT id,\"user\",\"select\",\"order\",\"table\",\"between\",\"natural\",http_urlconnection,already_snake_case FROM app.reserved_words WHERE \"select\" IS NOT DISTINCT FROM ?", tableMapper, select);
+  }
+}

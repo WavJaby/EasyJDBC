@@ -1,0 +1,134 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS parent(
+            id BIGINT NOT NULL,
+            region_id BIGINT NOT NULL,
+            code VARCHAR,
+            name VARCHAR,
+            CONSTRAINT parent_PK PRIMARY KEY(id),
+            CONSTRAINT parent_code_UK UNIQUE (code),
+            CONSTRAINT parent_region_id_code_UK UNIQUE (region_id,code)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS child(
+            id BIGINT NOT NULL,
+            parent_id BIGINT NOT NULL,
+            optional_parent_id BIGINT,
+            note VARCHAR,
+            CONSTRAINT child_PK PRIMARY KEY(id),
+            CONSTRAINT child_parent_id_FK FOREIGN KEY (parent_id) REFERENCES parent(id),
+            CONSTRAINT child_optional_parent_id_FK FOREIGN KEY (optional_parent_id) REFERENCES parent(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/ChildRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ChildRepositoryImpl implements ChildRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Child> tableMapper;
+
+  public ChildRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Child.class, 4);
+  }
+
+  @Override
+  public Child save(Child row) {
+    jdbc.update("INSERT INTO child (id,parent_id,optional_parent_id,note)VALUES(?,?,?,?)", row.id(), row.parentId(), row.optionalParentId(), row.note());
+    return new Child(row.id(), row.parentId(), row.optionalParentId(), row.note());
+  }
+
+  @Override
+  public Child getById(long id) {
+    List<Child> result = jdbc.query("SELECT id,parent_id,optional_parent_id,note FROM child WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Child> getByParentId(long parentId) {
+    return jdbc.query("SELECT id,parent_id,optional_parent_id,note FROM child WHERE parent_id=?", tableMapper, parentId);
+  }
+
+  @Override
+  public void deleteById(long id) {
+    jdbc.update("DELETE FROM child WHERE id=?", id);
+  }
+}
+
+=== generated: fx/ParentRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ParentRepositoryImpl implements ParentRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Parent> tableMapper;
+
+  public ParentRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Parent.class, 4);
+  }
+
+  @Override
+  public Parent save(Parent row) {
+    jdbc.update("INSERT INTO parent (id,region_id,code,name)VALUES(?,?,?,?)", row.id(), row.regionId(), row.code(), row.name());
+    return new Parent(row.id(), row.regionId(), row.code(), row.name());
+  }
+
+  @Override
+  public Parent getById(long id) {
+    List<Parent> result = jdbc.query("SELECT id,region_id,code,name FROM parent WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Parent> getAll() {
+    return jdbc.query("SELECT id,region_id,code,name FROM parent", tableMapper);
+  }
+}

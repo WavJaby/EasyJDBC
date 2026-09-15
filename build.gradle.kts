@@ -61,6 +61,25 @@ dependencies {
     annotationProcessor("com.google.auto.service:auto-service:1.1.1")
 
     implementation("com.squareup:javapoet:1.13.0")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    // ProcessorUtil.copyUtilityClasses reads com/wavjaby/jdbc/util/*.java off its own classloader (the jar ships those
+    // sources). javac's processor loader delegates to the app loader first, so the directory has to be here too.
+    classpath += files("src/main/java")
+    // The golden tests run javac in-process. The fixture compilation needs the same classpath the tests run on, and
+    // the processor copies com/wavjaby/jdbc/util/*.java as *resources*, which only exist in the source tree.
+    systemProperty("golden.classpath", sourceSets.test.get().runtimeClasspath.asPath)
+    systemProperty("golden.sourceDir", file("src/main/java").absolutePath)
+    systemProperty("golden.resourceDir", file("src/test/resources").absolutePath)
+    systemProperty("golden.workDir", layout.buildDirectory.dir("golden-work").get().asFile.absolutePath)
+    // -Dgolden.update=true rewrites every snapshot instead of comparing
+    systemProperty("golden.update", providers.systemProperty("golden.update").getOrElse("false"))
+    testLogging { showStandardStreams = true }
 }
 
 tasks.jar {

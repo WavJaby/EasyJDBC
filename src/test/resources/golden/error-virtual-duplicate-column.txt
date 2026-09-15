@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR BaseView.java: Duplicate column name found: title

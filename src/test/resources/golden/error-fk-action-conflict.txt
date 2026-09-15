@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR Tail.java: onUpdate/onDelete differ from the other columns of the composite foreign key to head

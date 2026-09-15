@@ -1,0 +1,97 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS basic(
+            id BIGINT NOT NULL,
+            flag_primitive BOOLEAN NOT NULL,
+            flag_boxed BOOLEAN,
+            byte_primitive SMALLINT NOT NULL,
+            byte_boxed SMALLINT,
+            short_primitive SMALLINT NOT NULL,
+            short_boxed SMALLINT,
+            int_primitive INTEGER NOT NULL,
+            int_boxed INTEGER,
+            long_boxed BIGINT NOT NULL,
+            float_primitive REAL NOT NULL,
+            float_boxed REAL,
+            double_primitive DOUBLE PRECISION NOT NULL,
+            double_boxed DOUBLE PRECISION,
+            char_primitive CHAR(1) NOT NULL,
+            char_boxed CHAR(1),
+            text VARCHAR,
+            "decimal" NUMERIC,
+            sql_date DATE,
+            local_date DATE,
+            stamp TIMESTAMP,
+            blob BYTEA,
+            CONSTRAINT basic_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/BasicRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class BasicRepositoryImpl implements BasicRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Basic> tableMapper;
+
+  public BasicRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Basic.class, 22);
+  }
+
+  @Override
+  public Basic save(Basic row) {
+    jdbc.update("INSERT INTO basic (id,flag_primitive,flag_boxed,byte_primitive,byte_boxed,short_primitive,short_boxed,int_primitive,int_boxed,long_boxed,float_primitive,float_boxed,double_primitive,double_boxed,char_primitive,char_boxed,text,\"decimal\",sql_date,local_date,stamp,blob)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row.id(), row.flagPrimitive(), row.flagBoxed(), row.bytePrimitive(), row.byteBoxed(), row.shortPrimitive(), row.shortBoxed(), row.intPrimitive(), row.intBoxed(), row.longBoxed(), row.floatPrimitive(), row.floatBoxed(), row.doublePrimitive(), row.doubleBoxed(), row.charPrimitive(), row.charBoxed(), row.text(), row.decimal(), row.sqlDate(), row.localDate(), row.stamp(), row.blob());
+    return new Basic(row.id(), row.flagPrimitive(), row.flagBoxed(), row.bytePrimitive(), row.byteBoxed(), row.shortPrimitive(), row.shortBoxed(), row.intPrimitive(), row.intBoxed(), row.longBoxed(), row.floatPrimitive(), row.floatBoxed(), row.doublePrimitive(), row.doubleBoxed(), row.charPrimitive(), row.charBoxed(), row.text(), row.decimal(), row.sqlDate(), row.localDate(), row.stamp(), row.blob());
+  }
+
+  @Override
+  public Basic getById(long id) {
+    List<Basic> result = jdbc.query("SELECT id,flag_primitive,flag_boxed,byte_primitive,byte_boxed,short_primitive,short_boxed,int_primitive,int_boxed,long_boxed,float_primitive,float_boxed,double_primitive,double_boxed,char_primitive,char_boxed,text,\"decimal\",sql_date,local_date,stamp,blob FROM basic WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Basic> getAll() {
+    return jdbc.query("SELECT id,flag_primitive,flag_boxed,byte_primitive,byte_boxed,short_primitive,short_boxed,int_primitive,int_boxed,long_boxed,float_primitive,float_boxed,double_primitive,double_boxed,char_primitive,char_boxed,text,\"decimal\",sql_date,local_date,stamp,blob FROM basic", tableMapper);
+  }
+}

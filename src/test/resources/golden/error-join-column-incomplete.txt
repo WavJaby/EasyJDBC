@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR Source.java: Least one of referencedColumnName and referencedFieldName should be provided for '@JoinTable'

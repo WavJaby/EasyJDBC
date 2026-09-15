@@ -1,0 +1,157 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS note(
+            id BIGINT NOT NULL,
+            title VARCHAR NOT NULL,
+            body VARCHAR(512),
+            created_at TIMESTAMP,
+            archived BOOLEAN NOT NULL,
+            revision INTEGER NOT NULL,
+            CONSTRAINT note_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/NoteRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import com.wavjaby.jdbc.util.Snowflake;
+import java.lang.Override;
+import java.lang.String;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class NoteRepositoryImpl implements NoteRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Note> tableMapper;
+
+  private final Snowflake snowflake;
+
+  public NoteRepositoryImpl(JdbcTemplate jdbc, Snowflake snowflake) {
+    this.jdbc = jdbc;
+    this.snowflake = snowflake;
+    tableMapper = new FastResultSetExtractor<>(Note.class, 6);
+  }
+
+  @Override
+  public Note save(Note row) {
+    long id0 = snowflake.nextId();
+    jdbc.update("INSERT INTO note (id,title,body,created_at,archived,revision)VALUES(?,?,?,?,?,?)", id0, row.title(), row.body(), row.createdAt(), row.archived(), row.revision());
+    return new Note(id0, row.title(), row.body(), row.createdAt(), row.archived(), row.revision());
+  }
+
+  @Override
+  public int saveAll(List<Note> rows_) {
+    List<Object[]> batchValues = new ArrayList<>(rows_.size());
+    for (Note rows : rows_) {
+      long id0 = snowflake.nextId();
+      batchValues.add(new Object[]{id0, rows.title(), rows.body(), rows.createdAt(), rows.archived(), rows.revision()});
+    }
+    int[] result = jdbc.batchUpdate("INSERT INTO note (id,title,body,created_at,archived,revision)VALUES(?,?,?,?,?,?)", batchValues);
+    return Arrays.stream(result).sum();
+  }
+
+  @Override
+  public Note getById(long id) {
+    List<Note> result = jdbc.query("SELECT id,title,body,created_at,archived,revision FROM note WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public Note getByTitleAndArchived(String title, boolean archived) {
+    List<Note> result = jdbc.query("SELECT id,title,body,created_at,archived,revision FROM note WHERE title=? AND archived=?", tableMapper, title, archived);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Note> getAll() {
+    return jdbc.query("SELECT id,title,body,created_at,archived,revision FROM note", tableMapper);
+  }
+
+  @Override
+  public List<Note> getByArchived(boolean archived) {
+    return jdbc.query("SELECT id,title,body,created_at,archived,revision FROM note WHERE archived=?", tableMapper, archived);
+  }
+
+  @Override
+  public boolean existsById(long id) {
+    return jdbc.queryForObject("SELECT COUNT(*) FROM note WHERE id=?", int.class, id) > 0;
+  }
+
+  @Override
+  public String getTitleById(long id) {
+    List<String> result = jdbc.queryForList("SELECT title FROM note WHERE id=?", String.class, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<String> getAllTitles() {
+    return jdbc.queryForList("SELECT title FROM note", String.class);
+  }
+
+  @Override
+  public void updateBody(long id, String body, Timestamp createdAt) {
+    jdbc.update("UPDATE note SET body=?,created_at=? WHERE id=?", body, createdAt, id);
+  }
+
+  @Override
+  public Note updateAndReturn(long id, String title) {
+    if (jdbc.update("UPDATE note SET title=? WHERE id=?", title, id) == 1) {
+      List<Note> result = jdbc.query("SELECT id,title,body,created_at,archived,revision FROM note WHERE id=?", tableMapper, id);
+      return result.isEmpty() ? null : result.get(0);
+    }
+    return null;
+  }
+
+  @Override
+  public void deleteById(long id) {
+    jdbc.update("DELETE FROM note WHERE id=?", id);
+  }
+
+  @Override
+  public boolean deleteByTitle(String title) {
+    return jdbc.update("DELETE FROM note WHERE title=?", title) > 0;
+  }
+
+  @Override
+  public int count() {
+    return jdbc.queryForObject("SELECT COUNT(*) FROM note", int.class);
+  }
+}

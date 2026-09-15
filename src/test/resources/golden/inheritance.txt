@@ -1,0 +1,75 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS "document"(
+            created_by VARCHAR(64),
+            created_at TIMESTAMP,
+            tag VARCHAR(128),
+            id BIGINT NOT NULL,
+            title VARCHAR,
+            CONSTRAINT document_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/DocumentRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class DocumentRepositoryImpl implements DocumentRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Document> tableMapper;
+
+  public DocumentRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Document.class, 5);
+  }
+
+  @Override
+  public Document getById(long id) {
+    List<Document> result = jdbc.query("SELECT created_by,created_at,tag,id,title FROM \"document\" WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Document> getByTag(String tag) {
+    return jdbc.query("SELECT created_by,created_at,tag,id,title FROM \"document\" WHERE tag IS NOT DISTINCT FROM ?", tableMapper, tag);
+  }
+}

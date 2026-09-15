@@ -1,0 +1,121 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS region(
+            id BIGINT NOT NULL,
+            country_id BIGINT NOT NULL,
+            code VARCHAR,
+            CONSTRAINT region_PK PRIMARY KEY(id),
+            CONSTRAINT region_country_id_code_UK UNIQUE (country_id,code)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS branch(
+            id BIGINT NOT NULL,
+            country_id BIGINT NOT NULL,
+            region_code VARCHAR NOT NULL,
+            name VARCHAR,
+            CONSTRAINT branch_PK PRIMARY KEY(id),
+            CONSTRAINT branch_country_id__region_code_FK FOREIGN KEY (country_id,region_code) REFERENCES region(country_id,code) ON UPDATE CASCADE ON DELETE SET NULL
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/BranchRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class BranchRepositoryImpl implements BranchRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Branch> tableMapper;
+
+  public BranchRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Branch.class, 4);
+  }
+
+  @Override
+  public Branch save(Branch row) {
+    jdbc.update("INSERT INTO branch (id,country_id,region_code,name)VALUES(?,?,?,?)", row.id(), row.countryId(), row.regionCode(), row.name());
+    return new Branch(row.id(), row.countryId(), row.regionCode(), row.name());
+  }
+
+  @Override
+  public Branch getById(long id) {
+    List<Branch> result = jdbc.query("SELECT id,country_id,region_code,name FROM branch WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Branch> getByCountryId(long countryId) {
+    return jdbc.query("SELECT id,country_id,region_code,name FROM branch WHERE country_id=?", tableMapper, countryId);
+  }
+}
+
+=== generated: fx/RegionRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class RegionRepositoryImpl implements RegionRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Region> tableMapper;
+
+  public RegionRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Region.class, 3);
+  }
+
+  @Override
+  public Region save(Region row) {
+    jdbc.update("INSERT INTO region (id,country_id,code)VALUES(?,?,?)", row.id(), row.countryId(), row.code());
+    return new Region(row.id(), row.countryId(), row.code());
+  }
+
+  @Override
+  public Region getById(long id) {
+    List<Region> result = jdbc.query("SELECT id,country_id,code FROM region WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}

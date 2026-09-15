@@ -1,0 +1,167 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS account(
+            id BIGINT NOT NULL,
+            username VARCHAR,
+            display_name VARCHAR,
+            profile_id BIGINT NOT NULL,
+            CONSTRAINT account_PK PRIMARY KEY(id)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS profile(
+            id BIGINT NOT NULL,
+            bio VARCHAR,
+            city VARCHAR(32),
+            CONSTRAINT profile_PK PRIMARY KEY(id)
+        );""");
+    jdbc.execute("""
+        CREATE OR REPLACE VIEW account_view AS SELECT B.id,B.username,B.profile_id,profile.bio as about,profile.city as location,COALESCE(B.display_name, 'anonymous') as display_name
+            FROM account B
+            LEFT JOIN profile ON B.profile_id=profile.id;""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/AccountRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class AccountRepositoryImpl implements AccountRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Account> tableMapper;
+
+  public AccountRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Account.class, 4);
+  }
+
+  @Override
+  public Account save(Account row) {
+    jdbc.update("INSERT INTO account (id,username,display_name,profile_id)VALUES(?,?,?,?)", row.id(), row.username(), row.displayName(), row.profileId());
+    return new Account(row.id(), row.username(), row.displayName(), row.profileId());
+  }
+
+  @Override
+  public Account getById(long id) {
+    List<Account> result = jdbc.query("SELECT id,username,display_name,profile_id FROM account WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Account> getAll() {
+    return jdbc.query("SELECT id,username,display_name,profile_id FROM account", tableMapper);
+  }
+}
+
+=== generated: fx/AccountViewRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class AccountViewRepositoryImpl implements AccountViewRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<AccountView> tableMapper;
+
+  public AccountViewRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(AccountView.class, 6);
+  }
+
+  @Override
+  public AccountView getById(long id) {
+    List<AccountView> result = jdbc.query("SELECT id,username,profile_id,about,location,display_name FROM account_view WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<AccountView> getAll() {
+    return jdbc.query("SELECT id,username,profile_id,about,location,display_name FROM account_view", tableMapper);
+  }
+
+  @Override
+  public List<AccountView> getByLocation(String location) {
+    return jdbc.query("SELECT id,username,profile_id,about,location,display_name FROM account_view WHERE location IS NOT DISTINCT FROM ?", tableMapper, location);
+  }
+
+  @Override
+  public String getAboutById(long id) {
+    List<String> result = jdbc.queryForList("SELECT about FROM account_view WHERE id=?", String.class, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}
+
+=== generated: fx/ProfileRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ProfileRepositoryImpl implements ProfileRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Profile> tableMapper;
+
+  public ProfileRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Profile.class, 3);
+  }
+
+  @Override
+  public Profile save(Profile row) {
+    jdbc.update("INSERT INTO profile (id,bio,city)VALUES(?,?,?)", row.id(), row.bio(), row.city());
+    return new Profile(row.id(), row.bio(), row.city());
+  }
+
+  @Override
+  public Profile getById(long id) {
+    List<Profile> result = jdbc.query("SELECT id,bio,city FROM profile WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}

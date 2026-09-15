@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR Matrix.java: Primitive array is not supported: int[], use List or DeclaredType array instead.

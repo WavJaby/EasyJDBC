@@ -1,0 +1,91 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS "options"(
+            id BIGINT NOT NULL,
+            renamed_column VARCHAR,
+            bounded VARCHAR(64),
+            not_null_by_column VARCHAR NOT NULL,
+            not_null_by_annotation VARCHAR NOT NULL,
+            unique_column VARCHAR,
+            scaled_decimal NUMERIC(12,4),
+            precision_only_decimal NUMERIC(12),
+            double_with_scale NUMERIC(10,6) NOT NULL,
+            raw_definition TEXT,
+            commented VARCHAR,
+            not_insertable VARCHAR,
+            not_updatable VARCHAR,
+            defaulted INTEGER DEFAULT 0 NOT NULL,
+            defaulted_text VARCHAR DEFAULT ''unset'' NOT NULL,
+            CONSTRAINT options_PK PRIMARY KEY(id),
+            CONSTRAINT options_unique_column_UK UNIQUE (unique_column)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/OptionsRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class OptionsRepositoryImpl implements OptionsRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Options> tableMapper;
+
+  public OptionsRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Options.class, 15);
+  }
+
+  @Override
+  public Options save(Options row) {
+    jdbc.update("INSERT INTO \"options\" (id,renamed_column,bounded,not_null_by_column,not_null_by_annotation,unique_column,scaled_decimal,precision_only_decimal,double_with_scale,raw_definition,commented,not_insertable,not_updatable,defaulted,defaulted_text)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row.id(), row.renamed(), row.bounded(), row.notNullByColumn(), row.notNullByAnnotation(), row.uniqueColumn(), row.scaledDecimal(), row.precisionOnlyDecimal(), row.doubleWithScale(), row.rawDefinition(), row.commented(), row.notInsertable(), row.notUpdatable(), row.defaulted(), row.defaultedText());
+    return new Options(row.id(), row.renamed(), row.bounded(), row.notNullByColumn(), row.notNullByAnnotation(), row.uniqueColumn(), row.scaledDecimal(), row.precisionOnlyDecimal(), row.doubleWithScale(), row.rawDefinition(), row.commented(), row.notInsertable(), row.notUpdatable(), row.defaulted(), row.defaultedText());
+  }
+
+  @Override
+  public Options getById(long id) {
+    List<Options> result = jdbc.query("SELECT id,renamed_column,bounded,not_null_by_column,not_null_by_annotation,unique_column,scaled_decimal,precision_only_decimal,double_with_scale,raw_definition,commented,not_insertable,not_updatable,defaulted,defaulted_text FROM \"options\" WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Options> getAll() {
+    return jdbc.query("SELECT id,renamed_column,bounded,not_null_by_column,not_null_by_annotation,unique_column,scaled_decimal,precision_only_decimal,double_with_scale,raw_definition,commented,not_insertable,not_updatable,defaulted,defaulted_text FROM \"options\"", tableMapper);
+  }
+}

@@ -1,0 +1,138 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        DO
+        $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fx_status') THEN
+                CREATE TYPE fx_status AS ENUM (
+                'NEW', 'ACTIVE', 'CLOSED'
+                );
+            END IF;
+        END
+        $$;""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS ticket(
+            id BIGINT NOT NULL,
+            status fx_status,
+            status_text VARCHAR(32),
+            status_array fx_status ARRAY,
+            status_list fx_status ARRAY,
+            CONSTRAINT ticket_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/TicketRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.sql.Types;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class TicketRepositoryImpl implements TicketRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Ticket> tableMapper;
+
+  public TicketRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Ticket.class, 5);
+  }
+
+  @Override
+  public Ticket save(Ticket row) {
+    String[] var0 = new String[row.statusArray().length];
+    for (int i = 0; i < row.statusArray().length; i++) {
+      var0[i] = row.statusArray()[i].name();
+    }
+    String[] var1 = new String[row.statusList().size()];
+    for (int i = 0; i < row.statusList().size(); i++) {
+      var1[i] = row.statusList().get(i).name();
+    }
+    jdbc.update("INSERT INTO ticket (id,status,status_text,status_array,status_list)VALUES(?,?::fx_status,?,?::fx_status[],?::fx_status[])", row.id(), row.status() == null ? null : row.status().name(), row.statusText() == null ? null : row.statusText().name(), new SqlParameterValue(Types.ARRAY, var0), new SqlParameterValue(Types.ARRAY, var1));
+    return new Ticket(row.id(), row.status(), row.statusText(), row.statusArray(), row.statusList());
+  }
+
+  @Override
+  public Ticket getById(long id) {
+    List<Ticket> result = jdbc.query("SELECT id,status,status_text,status_array,status_list FROM ticket WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Ticket> getByStatus(Status status) {
+    return jdbc.query("SELECT id,status,status_text,status_array,status_list FROM ticket WHERE status IS NOT DISTINCT FROM ?::fx_status", tableMapper, status == null ? null : status.name());
+  }
+
+  @Override
+  public List<Ticket> getByStatusText(Status statusText) {
+    return jdbc.query("SELECT id,status,status_text,status_array,status_list FROM ticket WHERE status_text IS NOT DISTINCT FROM ?", tableMapper, statusText == null ? null : statusText.name());
+  }
+
+  @Override
+  public Status getStatusById(long id) {
+    List<Status> result = jdbc.queryForList("SELECT status FROM ticket WHERE id=?", Status.class, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Status> getStatusListById(long id) {
+    return jdbc.queryForList("SELECT status_list FROM ticket WHERE id=?", Status.class, id);
+  }
+
+  @Override
+  public void updateStatus(long id, Status status) {
+    jdbc.update("UPDATE ticket SET status=?::fx_status WHERE id=?", status == null ? null : status.name(), id);
+  }
+
+  @Override
+  public List<Ticket> findByCustomSql(Status status) {
+    return jdbc.query("SELECT id,status,status_text,status_array,status_list FROM ticket WHERE status IS NOT DISTINCT FROM ?::fx_status AND STATUS = ?::fx_status", tableMapper, status == null ? null : status.name(), status == null ? null : status.name());
+  }
+
+  @Override
+  public int count() {
+    return jdbc.queryForObject("SELECT COUNT(*) FROM ticket", int.class);
+  }
+
+  @Override
+  public void deleteById(long id) {
+    jdbc.update("DELETE FROM ticket WHERE id=?", id);
+  }
+}
