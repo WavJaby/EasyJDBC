@@ -1,0 +1,114 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS "event"(
+            id BIGINT NOT NULL,
+            name VARCHAR,
+            priority INTEGER NOT NULL,
+            happened_at TIMESTAMP,
+            CONSTRAINT event_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/EventRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.util.List;
+import java.util.NoSuchElementException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class EventRepositoryImpl implements EventRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Event> tableMapper;
+
+  public EventRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Event.class, 4);
+  }
+
+  @Override
+  public Event save(Event row) {
+    jdbc.update("INSERT INTO \"event\" (id,name,priority,happened_at)VALUES(?,?,?,?)", row.id(), row.name(), row.priority(), row.happenedAt());
+    return new Event(row.id(), row.name(), row.priority(), row.happenedAt());
+  }
+
+  @Override
+  public List<Event> getAllOldestFirst() {
+    return jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" ORDER BY happened_at ASC", tableMapper);
+  }
+
+  @Override
+  public List<Event> getAllRanked() {
+    return jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" ORDER BY priority DESC, happened_at ASC", tableMapper);
+  }
+
+  @Override
+  public List<Event> getFirstTen() {
+    return jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" LIMIT 10", tableMapper);
+  }
+
+  @Override
+  public Event getLatest() {
+    List<Event> result = jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" ORDER BY happened_at DESC LIMIT 1", tableMapper);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<Event> getTopAbove(int minPriority) {
+    return jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" WHERE PRIORITY > ? ORDER BY priority DESC LIMIT 5", tableMapper, minPriority);
+  }
+
+  @Override
+  public Event getByIdOrThrow(long id) {
+    List<Event> result = jdbc.query("SELECT id,name,priority,happened_at FROM \"event\" WHERE id=?", tableMapper, id);
+    if (result.isEmpty()) {
+      throw new NoSuchElementException("no event " + id);
+    }
+    return result.get(0);
+  }
+
+  @Override
+  public String getNameOrThrow(long id) {
+    List<String> result = jdbc.queryForList("SELECT name FROM \"event\" WHERE id=?", String.class, id);
+    if (result.isEmpty()) {
+      throw new NoSuchElementException();
+    }
+    return result.get(0);
+  }
+}
