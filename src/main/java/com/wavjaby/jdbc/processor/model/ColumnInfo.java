@@ -26,7 +26,9 @@ public class ColumnInfo {
     public final TypeMirror type;
     public final boolean isString;
     public final boolean isArray;
+    public final boolean isList;
     public final boolean isEnum;
+    public final String customEnumType;
 
     public final String columnName; // lower snake case
     public final String quotedColumnName;
@@ -73,7 +75,7 @@ public class ColumnInfo {
 
         boolean nullable = field.getAnnotation(NotNull.class) == null;
 
-        boolean isString = false, isArray = false, isEnum = false;
+        boolean isString = false, isArray = false, isList = false, isEnum = false;
         TypeMirror type = field.asType();
         // Extracts array/list element type; flags array status
         if (type instanceof ArrayType arrayType) {
@@ -83,6 +85,8 @@ public class ColumnInfo {
                 isArray = true;
         } else if (type instanceof DeclaredType declaredType && declaredType.asElement().toString().equals(List.class.getName())) {
             type = declaredType.getTypeArguments().get(0);
+            isArray = true;
+            isList = true;
         } else if (type instanceof PrimitiveType)
             nullable = false;
 
@@ -93,7 +97,10 @@ public class ColumnInfo {
         this.type = type;
         this.isString = isString;
         this.isArray = isArray;
+        this.isList = isList;
         this.isEnum = isEnum;
+        this.customEnumType = isEnum && column == null
+                ? convertPropertyNameToUnderscoreName(this.type.toString()) : null;
 
         // Get column info
         this.isPrimaryKey = field.getAnnotation(Id.class) != null;

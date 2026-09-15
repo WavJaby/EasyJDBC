@@ -60,6 +60,10 @@ public class JdbcCodeGenerator {
                     } else {
                         queryBuilder.append(column.quotedColumnName)
                                 .append(!update && column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?');
+                        if (column.customEnumType != null) {
+                            queryBuilder.append("::").append(column.customEnumType);
+                            if (column.isArray) queryBuilder.append("[]");
+                        }
                     }
 
                     String argName = param.paramName;
@@ -93,10 +97,14 @@ public class JdbcCodeGenerator {
             queryBuilder.append("VALUES(");
             boolean first = true;
             for (MethodParamInfo info : methodInfo.params) {
-                for (int i = 0; i < info.columns.size(); i++) {
+                for (ColumnInfo column : info.columns) {
                     if (!first) queryBuilder.append(',');
                     first = false;
                     queryBuilder.append('?');
+                    if (column.customEnumType != null) {
+                        queryBuilder.append("::").append(column.customEnumType);
+                        if (column.isArray) queryBuilder.append("[]");
+                    }
                 }
             }
             queryBuilder.append(')');
@@ -114,9 +122,16 @@ public class JdbcCodeGenerator {
                 queryBuilder.append('?');
 
                 MethodParamInfo methodParam = sqlParam.methodParamInfo();
-                boolean isArray = methodParam != null && methodParam.parameter.asType() instanceof ArrayType;
-                boolean isEnum = methodParam != null && methodParam.parameter.asType() instanceof DeclaredType declaredType &&
-                        declaredType.asElement().getKind() == ElementKind.ENUM;
+                if (methodParam != null && !methodParam.columns.isEmpty()) {
+                    ColumnInfo column = methodParam.columns.getFirst();
+                    if (column.customEnumType != null) {
+                        queryBuilder.append("::").append(column.customEnumType);
+                        if (methodParam.isArray) queryBuilder.append("[]");
+                    }
+                }
+
+                boolean isArray = methodParam != null && methodParam.isArray;
+                boolean isEnum = methodParam != null && methodParam.isEnum;
 
                 appendArgs(args, sqlParam.paramName(), isArray, isEnum, true);
             }
@@ -292,10 +307,17 @@ public class JdbcCodeGenerator {
                 }
 
                 if (column.isArray && column.isEnum) {
-                    codeBlock.addStatement("$T[] var$L = new $T[$L.length]", String.class, tempVarCount, String.class, argName);
-                    codeBlock.beginControlFlow("for (int i = 0; i < $L.length; i++)", argName);
-                    codeBlock.addStatement("var$L[i] = $L[i].name()", tempVarCount, argName);
-                    codeBlock.endControlFlow();
+                    if (column.isList) {
+                        codeBlock.addStatement("$T[] var$L = new $T[$L.size()]", String.class, tempVarCount, String.class, argName);
+                        codeBlock.beginControlFlow("for (int i = 0; i < $L.size(); i++)", argName);
+                        codeBlock.addStatement("var$L[i] = $L.get(i).name()", tempVarCount, argName);
+                        codeBlock.endControlFlow();
+                    } else {
+                        codeBlock.addStatement("$T[] var$L = new $T[$L.length]", String.class, tempVarCount, String.class, argName);
+                        codeBlock.beginControlFlow("for (int i = 0; i < $L.length; i++)", argName);
+                        codeBlock.addStatement("var$L[i] = $L[i].name()", tempVarCount, argName);
+                        codeBlock.endControlFlow();
+                    }
                     tempVarCount++;
                 }
             }

@@ -258,6 +258,7 @@ public class SqlGenerator {
                 if (column != null && column.length() != -1) {
                     return "VARCHAR(" + column.length() + ")";
                 }
+                return StringConverter.convertPropertyNameToUnderscoreName(type.toString());
             } else if (typeName.startsWith(Boolean.class.getName())) kind = TypeKind.BOOLEAN;
             else if (typeName.startsWith(Byte.class.getName())) kind = TypeKind.BYTE;
             else if (typeName.startsWith(Short.class.getName())) kind = TypeKind.SHORT;

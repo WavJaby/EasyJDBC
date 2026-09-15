@@ -14,6 +14,8 @@ public class StringConverter {
             if (Character.isUpperCase(c) && Character.isLowerCase(lastChar)) {
 //                result.append('_').append(c); // H2 Database
                 result.append('_').append(Character.toLowerCase(c)); // PostgreSQL
+            } else if (c == '.') {
+                result.append('_');
             } else {
 //                result.append(Character.toUpperCase(c)); // H2 Database
                 result.append(Character.toLowerCase(c)); // PostgreSQL

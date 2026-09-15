@@ -7,6 +7,7 @@ import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
 import com.wavjaby.jdbc.processor.util.ProcessorUtil;
 import com.wavjaby.jdbc.processor.util.SqlGenerator;
+import com.wavjaby.jdbc.util.StringConverter;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,12 +21,14 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.*;
 import javax.lang.model.util.Elements;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClassElement;
@@ -191,6 +194,40 @@ public class TableProcessor extends AbstractProcessor {
         // Create schema init code
         for (String schema : schemaList) {
             initSchemeAndTable.addStatement("jdbc.execute($S)", "create schema if not exists " + schema + ";");
+        }
+
+        // Create enum type init code
+        Map<String, TypeElement> enumTypes = new LinkedHashMap<>();
+        for (TableData tableData : tableDependency.values()) {
+            for (ColumnInfo column : tableData.tableFields.values()) {
+                if (column.customEnumType != null) {
+                    if (column.type instanceof DeclaredType declaredType && declaredType.asElement() instanceof TypeElement typeElement) {
+                        enumTypes.putIfAbsent(column.type.toString(), typeElement);
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, TypeElement> entry : enumTypes.entrySet()) {
+            String fullEnumName = entry.getKey();
+            TypeElement typeElement = entry.getValue();
+            List<String> enumValues = typeElement.getEnclosedElements().stream()
+                    .filter(e -> e.getKind() == ElementKind.ENUM_CONSTANT)
+                    .map(e -> e.getSimpleName().toString())
+                    .toList();
+
+            String enumValuesStr = enumValues.stream().map(v -> "'" + v + "'").collect(Collectors.joining(", "));
+            String customEnumTypeName = StringConverter.convertPropertyNameToUnderscoreName(fullEnumName);
+            String sql = "DO\n" +
+                    "$$\n" +
+                    "BEGIN\n" +
+                    "    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '" + customEnumTypeName + "') THEN\n" +
+                    "        CREATE TYPE " + customEnumTypeName + " AS ENUM (\n" +
+                    "        " + enumValuesStr + "\n" +
+                    "        );\n" +
+                    "    END IF;\n" +
+                    "END\n" +
+                    "$$;";
+            initSchemeAndTable.addStatement("jdbc.execute(\"\"\"\n$L\"\"\")", sql);
         }
 
         // Create table create SQL

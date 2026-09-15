@@ -147,6 +147,9 @@ public class MethodInfo {
             if (param == null) {
                 error = true;
                 printError(console, method, Select.class, keyName, "Parameter '" + sqlParams.get(i).paramName() + "' is not defined in method parameters");
+            } else if (param.isEnum && param.columns.size() > 1) {
+                error = true;
+                printError(console, method, Select.class, keyName, "Parameter '" + sqlParams.get(i).paramName() + "' have multiple columns, only one column is allowed in custom SQL");
             }
             result[i] = new SqlParamInfo(sqlParams.get(i).sql(), sqlParams.get(i).paramName(), param);
         }
