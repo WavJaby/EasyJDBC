@@ -74,9 +74,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
 
     // EasyJDBC util
-    compileOnly("com.wavjaby:easyjdbc:1.0-SNAPSHOT")
+    compileOnly("com.wavjaby:easyjdbc:1.0.0")
     // Annotation processing
-    annotationProcessor("com.wavjaby:easyjdbc:1.0-SNAPSHOT")
+    annotationProcessor("com.wavjaby:easyjdbc:1.0.0")
 }
 ```
 
@@ -106,7 +106,7 @@ public record User(
 ### 2. Create Repository Interface
 
 ```java
-import com.wavjaby.persistence.Count;
+import com.wavjaby.jdbc.annotation.Count;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
@@ -350,6 +350,10 @@ EasyJDBC includes comprehensive performance tests. Run them with:
 ```bash
 ./gradlew test --tests "*PerformanceTest*"
 ```
+
+## License
+
+This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Requirements
 

@@ -42,3 +42,7 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+### Agent working state ###
+docs/
+CLAUDE.md
+scripts/.agent/

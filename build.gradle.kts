@@ -5,10 +5,10 @@ plugins {
 }
 
 group = "com.wavjaby"
-version = "0.0.1-SNAPSHOT"
+version = "0.0.2-SNAPSHOT"
 
 mavenPublishing {
-  coordinates("com.wavjaby", "easyjdbc", "0.0.1-SNAPSHOT")
+  coordinates(group as String, "easyjdbc", version as String)
 
   pom {
     name.set("EasyJDBC")
