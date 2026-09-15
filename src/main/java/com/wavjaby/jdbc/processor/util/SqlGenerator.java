@@ -63,10 +63,13 @@ public class SqlGenerator {
             if (columnInfo.defaultValue != null)
                 builder.append("COALESCE(");
 
-            builder.append(targetTableFullName).append('.').append(columnInfo.quotedColumnName);
+            String sourceColumnName = columnInfo.getQuotedSourceColumnName();
+            builder.append(targetTableFullName).append('.').append(sourceColumnName);
 
             if (columnInfo.defaultValue != null)
-                builder.append(", ").append(columnInfo.defaultValue).append(") as ").append(columnInfo.quotedColumnName);
+                builder.append(", ").append(columnInfo.defaultValue).append(')');
+            if (columnInfo.defaultValue != null || !sourceColumnName.equals(columnInfo.quotedColumnName))
+                builder.append(" as ").append(columnInfo.quotedColumnName);
 
             // Add reference column join info
             if (columnInfo.joinColumn != null) {
@@ -93,7 +96,7 @@ public class SqlGenerator {
                 if (!firstJoin)
                     joinSql.append(" AND ");
                 firstJoin = false;
-                joinSql.append(targetTableFullName).append('.').append(columnInfo.quotedColumnName).append('=')
+                joinSql.append(targetTableFullName).append('.').append(columnInfo.getQuotedSourceColumnName()).append('=')
                         .append(referenceTableFullName).append('.').append(referenceColumn.quotedColumnName);
             }
         }

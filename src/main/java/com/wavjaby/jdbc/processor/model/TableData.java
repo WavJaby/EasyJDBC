@@ -1,15 +1,17 @@
 package com.wavjaby.jdbc.processor.model;
 
-import com.wavjaby.jdbc.annotation.Table;
-import com.wavjaby.jdbc.processor.EmptyProcessingException;
+import com.wavjaby.jdbc.annotation.FieldName;
 import com.wavjaby.jdbc.annotation.JoinColumn;
+import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.annotation.UniqueConstraint;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
 import java.util.*;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
@@ -238,24 +240,47 @@ public class TableData {
             referencedTables.put(info.referencedTableClassPath, info.getReferencedColumn().tableData);
         }
 
+        Set<String> viewColumnNames = new HashSet<>();
         for (ColumnInfo info : tableData.tableFields.values()) {
             String fieldName = info.field.getSimpleName().toString();
 
+            String sourceFieldName = fieldName;
+            String aliasTableClassPath = null;
+            FieldName alias = info.field.getAnnotation(FieldName.class);
+            if (alias != null) {
+                if (!alias.value().trim().isEmpty())
+                    sourceFieldName = alias.value().trim();
+                DeclaredType aliasClass = getAnnotationValueClass(getAnnotationMirror(info.field, FieldName.class), "referencedClass");
+                if (aliasClass != null)
+                    aliasTableClassPath = aliasClass.toString();
+            }
+
             ColumnInfo targetColumn = null;
             for (TableData table : referencedTables.values()) {
-                targetColumn = table.tableFields.get(fieldName);
+                if (aliasTableClassPath != null && !aliasTableClassPath.equals(table.tableInfo.classPath))
+                    continue;
+                targetColumn = table.tableFields.get(sourceFieldName);
                 if (targetColumn != null) break;
             }
             if (targetColumn == null) {
-                console.printMessage(ERROR, "Field '" + fieldName + "' not found in any referenced table", info.field);
+                console.printMessage(ERROR, aliasTableClassPath == null
+                        ? "Field '" + sourceFieldName + "' not found in any referenced table"
+                        : "Field '" + sourceFieldName + "' not found in table '" + aliasTableClassPath + "'. A table is only referenced once some field joins it with '@JoinColumn'",
+                        info.field);
                 return true;
             }
+            String sourceColumnName = targetColumn.quotedColumnName;
 
             // Redirect field table to target table
             targetColumn = new ColumnInfo(info.field, targetColumn.tableData);
+            targetColumn.setQuotedSourceColumnName(sourceColumnName);
             if (targetColumn.joinColumn != null)
                 targetColumn.setReferencedColumn(info.getReferencedColumn());
 
+            if (!viewColumnNames.add(info.columnName)) {
+                console.printMessage(ERROR, "Duplicate view column '" + info.columnName + "', rename the field or give it '@FieldName'", info.field);
+                return true;
+            }
             tableColumns.put(info.columnName, targetColumn);
             tableFields.put(fieldName, targetColumn);
         }

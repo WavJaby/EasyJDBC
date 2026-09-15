@@ -45,6 +45,9 @@ public class ColumnInfo {
     public final String referencedTableClassPath;
     private ColumnInfo referencedColumn;
 
+    // @FieldName source column. Defaults to quotedColumnName so non-virtual tables read it without branching
+    private String quotedSourceColumnName;
+
     public ColumnInfo(VariableElement field, TableData tableData) {
         this.column = field.getAnnotation(Column.class);
         this.tableInfo = tableData.tableInfo;
@@ -108,6 +111,7 @@ public class ColumnInfo {
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
         this.columnName = getColumnName(field);
         this.quotedColumnName = SqlGenerator.quoteColumnName(this.columnName);
+        this.quotedSourceColumnName = this.quotedColumnName;
 
         boolean isUniqueKey = false;
         boolean isGroupedUniqueKey = false;
@@ -213,6 +217,14 @@ public class ColumnInfo {
         this.referencedColumn = referencedColumnInfo;
 
         return false;
+    }
+
+    public String getQuotedSourceColumnName() {
+        return quotedSourceColumnName;
+    }
+
+    public void setQuotedSourceColumnName(String quotedSourceColumnName) {
+        this.quotedSourceColumnName = quotedSourceColumnName;
     }
 
     public void setReferencedColumn(ColumnInfo referencedColumnInfo) {
