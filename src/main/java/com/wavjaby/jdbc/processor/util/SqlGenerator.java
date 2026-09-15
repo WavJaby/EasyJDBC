@@ -256,6 +256,10 @@ public class SqlGenerator {
             } else if (type.toString().equals(java.sql.Timestamp.class.getName())) {
                 return "TIMESTAMP";
             }
+            // Prefer BigDecimal over double for any NUMERIC column queried by equality or range: it is the only Java type that also binds as numeric
+            else if (typeName.startsWith(java.math.BigDecimal.class.getName())) {
+                return numericType(column);
+            }
             // Check if type is enum
             else if (declaredType.asElement() instanceof TypeElement typeElement && typeElement.getKind() == ElementKind.ENUM) {
                 if (column != null && column.length() != -1) {
@@ -296,17 +300,20 @@ public class SqlGenerator {
             case FLOAT:
                 return "REAL";
             case DOUBLE:
-                if (column != null && column.precision() != 0) {
-                    return column.scale() != 0
-                            ? "NUMERIC(" + column.precision() + "," + column.scale() + ")"
-                            : "NUMERIC(" + column.precision() + ")";
-                } else {
-                    return "DOUBLE PRECISION";
-                }
+                // precision/scale on a double still yields NUMERIC, kept for existing schemas; the parameter binds as DOUBLE PRECISION
+                return column != null && column.precision() != 0 ? numericType(column) : "DOUBLE PRECISION";
             case CHAR:
                 return "CHAR(1)";
             default:
                 return null;
         }
+    }
+
+    private static String numericType(Column column) {
+        if (column == null || column.precision() == 0)
+            return "NUMERIC";
+        return column.scale() != 0
+                ? "NUMERIC(" + column.precision() + "," + column.scale() + ")"
+                : "NUMERIC(" + column.precision() + ")";
     }
 }
