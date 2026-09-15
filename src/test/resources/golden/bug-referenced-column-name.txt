@@ -1,2 +1,0 @@
-=== diagnostics (1) ===
-ERROR Item.java: Referenced column 'code' not exist in table 'fx.Owner'

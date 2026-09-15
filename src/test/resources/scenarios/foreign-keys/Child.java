@@ -7,7 +7,7 @@ import com.wavjaby.jdbc.annotation.Table;
 /**
  * Two independent single-column FKs to the same referenced column, one of them nullable. Table ordering in the DDL
  * also matters -- the child must be created after the parent.
- * referencedColumnName lives in its own scenario: it does not work today (see bug-referenced-column-name).
+ * referencedColumnName lives in its own scenario (join-by-column-name).
  * Composite FKs and referential actions live in composite-foreign-key.
  */
 @Table(repositoryClass = ChildRepository.class)

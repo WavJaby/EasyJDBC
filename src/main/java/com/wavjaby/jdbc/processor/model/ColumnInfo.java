@@ -193,8 +193,8 @@ public class ColumnInfo {
 
     public boolean processTableJoin(Map<String, TableData> tableDataMap, TableData tableData, Messager console) {
         if (joinColumn == null) return false;
-        TableData refrenceTableData = tableDataMap.get(referencedTableClassPath);
-        if (refrenceTableData == null) {
+        TableData referencedTableData = tableDataMap.get(referencedTableClassPath);
+        if (referencedTableData == null) {
             console.printMessage(ERROR, "Referenced table class '" + referencedTableClassPath + "' not found in the provided table data map.", field);
             return true;
         }
@@ -202,13 +202,13 @@ public class ColumnInfo {
         // Find referenced ColumnInfo
         ColumnInfo referencedColumnInfo = null;
         if (!joinColumn.referencedColumnName().isEmpty()) {
-            referencedColumnInfo = tableData.tableColumns.get(joinColumn.referencedColumnName());
+            referencedColumnInfo = referencedTableData.tableColumns.get(joinColumn.referencedColumnName());
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced column '" + joinColumn.referencedColumnName() + "' not exist in table '" + referencedTableClassPath + "'", field);
                 return true;
             }
         } else {
-            referencedColumnInfo = refrenceTableData.tableFields.get(joinColumn.referencedClassFieldName());
+            referencedColumnInfo = referencedTableData.tableFields.get(joinColumn.referencedClassFieldName());
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced field '" + joinColumn.referencedClassFieldName() + "' not exist in table '" + referencedTableClassPath + "'", field);
                 return true;
