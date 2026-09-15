@@ -150,8 +150,7 @@ public class AnnotationHelper {
                 continue;
 
             String fieldName = field.getSimpleName().toString();
-            if (!fields.containsKey(fieldName))
-                fields.put(fieldName, field);
+            fields.put(fieldName, field);
         }
     }
 
