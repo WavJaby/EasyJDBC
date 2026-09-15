@@ -1,10 +1,12 @@
 package com.wavjaby.jdbc.processor.util;
 
 import com.wavjaby.jdbc.annotation.Column;
+import com.wavjaby.jdbc.annotation.JoinColumn;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
+import com.wavjaby.jdbc.util.StringConverter;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.ElementKind;
@@ -162,17 +164,26 @@ public class SqlGenerator {
         }
 
         for (TableData.ForeignKeyGroup foreignKeyGroup : tableData.foreignKeyList) {
-            String foreignKeyName = tableInfo.name + '_' + String.join("__", foreignKeyGroup.sourceColumns()) + "_FK";
+            String foreignKeyName = tableInfo.name + '_' + String.join("__", foreignKeyGroup.sourceColumns) + "_FK";
 
             builder.append(",\n");
             builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
-                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ")
-                    .append(foreignKeyGroup.referencedTable().quotedTableFullName).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
+                    .append(String.join(",", foreignKeyGroup.sourceColumns).toLowerCase()).append(") REFERENCES ")
+                    .append(foreignKeyGroup.referencedTable.quotedTableFullName).append("(").append(String.join(",", foreignKeyGroup.referencedColumns).toLowerCase()).append(")");
+            appendReferentialAction(builder, "ON UPDATE", foreignKeyGroup.onUpdate);
+            appendReferentialAction(builder, "ON DELETE", foreignKeyGroup.onDelete);
         }
 
         builder.append("\n);");
 
         return false;
+    }
+
+    // NO_ACTION is the SQL default, so it is left implicit and existing DDL stays byte-identical
+    private static void appendReferentialAction(StringBuilder builder, String clause, JoinColumn.Action action) {
+        if (action == null || action == JoinColumn.Action.NO_ACTION)
+            return;
+        builder.append(' ').append(clause).append(' ').append(action == JoinColumn.Action.CASCADE ? "CASCADE" : "SET NULL");
     }
 
     private static boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql, Messager console) {

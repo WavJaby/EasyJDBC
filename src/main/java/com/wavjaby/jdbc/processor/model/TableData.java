@@ -28,14 +28,34 @@ public class TableData {
 
     private TableData virtualBaseTableData;
 
-    public record ForeignKeyGroup(TableInfo referencedTable, List<String> sourceColumns,
-                                  List<String> referencedColumns) {
-        ForeignKeyGroup(TableInfo targetTable) {
-            this(targetTable, new ArrayList<>(), new ArrayList<>());
+    public static class ForeignKeyGroup {
+        public final TableInfo referencedTable;
+        public final List<String> referencedColumns;
+        public final List<String> sourceColumns;
+        // null until the first column joins the group; every later column must declare the same actions
+        public JoinColumn.Action onUpdate, onDelete;
+
+        public ForeignKeyGroup(TableInfo referencedTable, List<String> referencedColumns, List<String> sourceColumns) {
+            this.referencedTable = referencedTable;
+            this.referencedColumns = referencedColumns;
+            this.sourceColumns = sourceColumns;
         }
 
-        ForeignKeyGroup(TableInfo targetTable, String sourceColumn, String referencedColumn) {
-            this(targetTable, Collections.singletonList(sourceColumn), Collections.singletonList(referencedColumn));
+        ForeignKeyGroup(TableInfo referencedTable) {
+            this(referencedTable, new ArrayList<>(), new ArrayList<>());
+        }
+
+        ForeignKeyGroup(TableInfo referencedTable, String referencedColumn, String sourceColumn) {
+            this(referencedTable, Collections.singletonList(referencedColumn), Collections.singletonList(sourceColumn));
+        }
+
+        // false on conflict: one constraint carries one ON UPDATE / ON DELETE, so composite FK columns cannot disagree
+        boolean applyActions(JoinColumn joinColumn) {
+            if (onUpdate != null && (onUpdate != joinColumn.onUpdate() || onDelete != joinColumn.onDelete()))
+                return false;
+            onUpdate = joinColumn.onUpdate();
+            onDelete = joinColumn.onDelete();
+            return true;
         }
     }
 
@@ -154,13 +174,18 @@ public class TableData {
 
                 ColumnInfo otherReferencedColumn = target.getReferencedColumn();
                 if (referencedColumn.tableInfo.equals(otherReferencedColumn.tableInfo) &&
-                        referencedColumn.columnName.equals(otherReferencedColumn.columnName))
+                        referencedColumn.columnName.equals(otherReferencedColumn.columnName)) {
                     addToGroup = false;
+                    break;
+                }
             }
 
             // have duplicated target columns, create new group
+            assert column.joinColumn != null;
             if (!addToGroup) {
-                this.foreignKeyList.add(new ForeignKeyGroup(referencedColumn.tableInfo, column.columnName, referencedColumn.columnName));
+                ForeignKeyGroup group = new ForeignKeyGroup(referencedColumn.tableInfo, referencedColumn.columnName, column.columnName);
+                group.applyActions(column.joinColumn);
+                this.foreignKeyList.add(group);
             } else {
                 // Find group to add
                 ForeignKeyGroup foreignKeyGroup = null;
@@ -173,6 +198,11 @@ public class TableData {
                 if (foreignKeyGroup == null) {
                     foreignKeyGroup = new ForeignKeyGroup(referencedColumn.tableInfo);
                     this.foreignKeyList.add(foreignKeyGroup);
+                }
+
+                if (!foreignKeyGroup.applyActions(column.joinColumn)) {
+                    console.printMessage(ERROR, "onUpdate/onDelete differ from the other columns of the composite foreign key to " + referencedColumn.tableInfo.name, column.field);
+                    return true;
                 }
                 foreignKeyGroup.sourceColumns.add(column.columnName);
                 foreignKeyGroup.referencedColumns.add(referencedColumn.columnName);

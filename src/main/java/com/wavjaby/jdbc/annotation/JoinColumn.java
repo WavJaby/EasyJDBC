@@ -22,7 +22,14 @@ public @interface JoinColumn {
 
     boolean insertable() default true;
 
-    boolean updatable() default true;
+    /**
+     * FK referential action. Declare CASCADE where the referenced key is editable or the row is derived from the parent.
+     */
+    enum Action {NO_ACTION, CASCADE, SET_NULL}
+
+    Action onUpdate() default Action.NO_ACTION;
+
+    Action onDelete() default Action.NO_ACTION;
 
     String columnDefinition() default "";
 
