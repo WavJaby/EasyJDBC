@@ -240,7 +240,6 @@ public class TableData {
             referencedTables.put(info.referencedTableClassPath, info.getReferencedColumn().tableData);
         }
 
-        Set<String> viewColumnNames = new HashSet<>();
         for (ColumnInfo info : tableData.tableFields.values()) {
             String fieldName = info.field.getSimpleName().toString();
 
@@ -277,10 +276,6 @@ public class TableData {
             if (targetColumn.joinColumn != null)
                 targetColumn.setReferencedColumn(info.getReferencedColumn());
 
-            if (!viewColumnNames.add(info.columnName)) {
-                console.printMessage(ERROR, "Duplicate view column '" + info.columnName + "', rename the field or give it '@FieldName'", info.field);
-                return true;
-            }
             tableColumns.put(info.columnName, targetColumn);
             tableFields.put(fieldName, targetColumn);
         }
