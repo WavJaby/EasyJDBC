@@ -268,13 +268,8 @@ public class TableData {
                         info.field);
                 return true;
             }
-            String sourceColumnName = targetColumn.quotedColumnName;
-
-            // Redirect field table to target table
-            targetColumn = new ColumnInfo(info.field, targetColumn.tableData);
-            targetColumn.setQuotedSourceColumnName(sourceColumnName);
-            if (targetColumn.joinColumn != null)
-                targetColumn.setReferencedColumn(info.getReferencedColumn());
+            // Redirect field table to target table; info.getReferencedColumn() is null unless the field has @JoinColumn
+            targetColumn = new ColumnInfo(info.field, targetColumn.tableData, targetColumn.quotedColumnName, info.getReferencedColumn());
 
             tableColumns.put(info.columnName, targetColumn);
             tableFields.put(fieldName, targetColumn);
