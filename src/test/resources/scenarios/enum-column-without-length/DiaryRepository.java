@@ -6,4 +6,6 @@ public interface DiaryRepository {
     Diary save(Diary row);
 
     List<Diary> getByMood(Mood mood);
+
+    List<Diary> getByMoodText(Mood moodText);
 }

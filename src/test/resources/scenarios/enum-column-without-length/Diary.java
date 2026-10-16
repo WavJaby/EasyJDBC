@@ -14,6 +14,10 @@ public record Diary(
         long id,
 
         @Column(nullable = false)
-        Mood mood
+        Mood mood,
+
+        // columnDefinition: the user owns the column type, so no CREATE TYPE and no ::type cast
+        @Column(columnDefinition = "VARCHAR(16)")
+        Mood moodText
 ) {
 }

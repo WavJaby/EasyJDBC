@@ -26,6 +26,7 @@ public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent
         CREATE TABLE IF NOT EXISTS diary(
             id BIGINT NOT NULL,
             mood fx_mood NOT NULL,
+            mood_text VARCHAR(16),
             CONSTRAINT diary_PK PRIMARY KEY(id)
         );""");
   }
@@ -55,17 +56,22 @@ public class DiaryRepositoryImpl implements DiaryRepository {
 
   public DiaryRepositoryImpl(JdbcTemplate jdbc) {
     this.jdbc = jdbc;
-    tableMapper = new FastResultSetExtractor<>(Diary.class, 2);
+    tableMapper = new FastResultSetExtractor<>(Diary.class, 3);
   }
 
   @Override
   public Diary save(Diary row) {
-    jdbc.update("INSERT INTO diary (id,mood)VALUES(?,?)", row.id(), row.mood().name());
-    return new Diary(row.id(), row.mood());
+    jdbc.update("INSERT INTO diary (id,mood,mood_text)VALUES(?,?,?)", row.id(), row.mood().name(), row.moodText() == null ? null : row.moodText().name());
+    return new Diary(row.id(), row.mood(), row.moodText());
   }
 
   @Override
   public List<Diary> getByMood(Mood mood) {
-    return jdbc.query("SELECT id,mood FROM diary WHERE mood=?", tableMapper, mood.name());
+    return jdbc.query("SELECT id,mood,mood_text FROM diary WHERE mood=?", tableMapper, mood.name());
+  }
+
+  @Override
+  public List<Diary> getByMoodText(Mood moodText) {
+    return jdbc.query("SELECT id,mood,mood_text FROM diary WHERE mood_text IS NOT DISTINCT FROM ?", tableMapper, moodText == null ? null : moodText.name());
   }
 }
