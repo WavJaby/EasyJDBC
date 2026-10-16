@@ -1,0 +1,71 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS diary(
+            id BIGINT NOT NULL,
+            mood fx_mood NOT NULL,
+            CONSTRAINT diary_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/DiaryRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class DiaryRepositoryImpl implements DiaryRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Diary> tableMapper;
+
+  public DiaryRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Diary.class, 2);
+  }
+
+  @Override
+  public Diary save(Diary row) {
+    jdbc.update("INSERT INTO diary (id,mood)VALUES(?,?)", row.id(), row.mood().name());
+    return new Diary(row.id(), row.mood());
+  }
+
+  @Override
+  public List<Diary> getByMood(Mood mood) {
+    return jdbc.query("SELECT id,mood FROM diary WHERE mood=?", tableMapper, mood.name());
+  }
+}
