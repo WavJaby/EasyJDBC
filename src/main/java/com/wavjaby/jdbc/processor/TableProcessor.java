@@ -7,7 +7,6 @@ import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
 import com.wavjaby.jdbc.processor.util.ProcessorUtil;
 import com.wavjaby.jdbc.processor.util.SqlGenerator;
-import com.wavjaby.jdbc.util.StringConverter;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,10 +27,10 @@ import javax.lang.model.type.*;
 import javax.lang.model.util.Elements;
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClassElement;
+import static com.wavjaby.jdbc.processor.util.PostgresDialect.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 
@@ -196,37 +195,23 @@ public class TableProcessor extends AbstractProcessor {
             initSchemeAndTable.addStatement("jdbc.execute($S)", "create schema if not exists " + schema + ";");
         }
 
-        // Create enum type init code
+        // Create enum type init code, keyed by type name: one CREATE TYPE per name however many columns use it
         Map<String, TypeElement> enumTypes = new LinkedHashMap<>();
         for (TableData tableData : tableDependency.values()) {
             for (ColumnInfo column : tableData.tableFields.values()) {
-                if (column.customEnumType != null) {
+                if (column.nativeEnum) {
                     if (column.type instanceof DeclaredType declaredType && declaredType.asElement() instanceof TypeElement typeElement) {
-                        enumTypes.putIfAbsent(column.type.toString(), typeElement);
+                        enumTypes.putIfAbsent(enumTypeName(column.type), typeElement);
                     }
                 }
             }
         }
         for (Map.Entry<String, TypeElement> entry : enumTypes.entrySet()) {
-            String fullEnumName = entry.getKey();
-            TypeElement typeElement = entry.getValue();
-            List<String> enumValues = typeElement.getEnclosedElements().stream()
+            List<String> enumValues = entry.getValue().getEnclosedElements().stream()
                     .filter(e -> e.getKind() == ElementKind.ENUM_CONSTANT)
                     .map(e -> e.getSimpleName().toString())
                     .toList();
-
-            String enumValuesStr = enumValues.stream().map(v -> "'" + v + "'").collect(Collectors.joining(", "));
-            String customEnumTypeName = StringConverter.convertPropertyNameToUnderscoreName(fullEnumName);
-            String sql = "DO\n" +
-                    "$$\n" +
-                    "BEGIN\n" +
-                    "    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '" + customEnumTypeName + "') THEN\n" +
-                    "        CREATE TYPE " + customEnumTypeName + " AS ENUM (\n" +
-                    "        " + enumValuesStr + "\n" +
-                    "        );\n" +
-                    "    END IF;\n" +
-                    "END\n" +
-                    "$$;";
+            String sql = createEnumTypeSql(entry.getKey(), enumValues);
             initSchemeAndTable.addStatement("jdbc.execute(\"\"\"\n$L\"\"\")", sql);
         }
 
@@ -481,14 +466,14 @@ public class TableProcessor extends AbstractProcessor {
             methodBuilder.addStatement("batchValues.add(new Object[]{$L})", CodeBlock.join(values.args(), ", "));
             methodBuilder.endControlFlow();
 
-            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + tableInfo.quotedTableFullName + values.query());
+            methodBuilder.addStatement("int[] result = jdbc.batchUpdate($S, batchValues)", "INSERT INTO " + quoteTable(tableInfo) + values.query());
 
             if (returnInt)
                 methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
         } else {
             methodBuilder.addCode(idGenerator);
             methodBuilder.addCode(enumString);
-            String sql = "INSERT INTO " + tableInfo.quotedTableFullName + values.query();
+            String sql = "INSERT INTO " + quoteTable(tableInfo) + values.query();
 
             if (returnInt && !methodInfo.returns.table())
                 methodBuilder.addStatement("return ");
@@ -517,7 +502,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "SELECT COUNT(*) FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, true);
 
@@ -532,7 +517,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "SELECT COUNT(*) FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
+        String sql = "SELECT COUNT(*) FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, false);
 
@@ -566,7 +551,7 @@ public class TableProcessor extends AbstractProcessor {
                 }
             }
         } else {
-            columnQuery.append(returnColumn.column().quotedColumnName);
+            columnQuery.append(quoteColumn(returnColumn.column().columnName));
         }
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
@@ -577,7 +562,7 @@ public class TableProcessor extends AbstractProcessor {
         } else
             sqlArgs = queryWithArgs.args();
 
-        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, false);
 
@@ -597,10 +582,10 @@ public class TableProcessor extends AbstractProcessor {
         for (ColumnInfo column : tableData.tableColumns.values()) {
             if (!first) columnQuery.append(',');
             first = false;
-            columnQuery.append(column.quotedColumnName);
+            columnQuery.append(quoteColumn(column.columnName));
         }
 
-        String sql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+        String sql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), true);
 
@@ -616,7 +601,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
 
-        String sql = "DELETE FROM " + tableInfo.quotedTableFullName + queryWithArgs.query();
+        String sql = "DELETE FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
         JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, queryWithArgs.args(), methodInfo.returnTypeMirror);
 
@@ -653,7 +638,7 @@ public class TableProcessor extends AbstractProcessor {
 
         JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
 
-        String sql = "UPDATE " + tableInfo.quotedTableFullName + update.query();
+        String sql = "UPDATE " + quoteTable(tableInfo) + update.query();
 
         if (methodInfo.returns.table()) {
             if (update.args().isEmpty())
@@ -668,10 +653,10 @@ public class TableProcessor extends AbstractProcessor {
             for (ColumnInfo column : tableData.tableColumns.values()) {
                 if (!first) columnQuery.append(',');
                 first = false;
-                columnQuery.append(column.quotedColumnName);
+                columnQuery.append(quoteColumn(column.columnName));
             }
 
-            String selectSql = "SELECT " + columnQuery + " FROM " + tableInfo.quotedTableFullName + where.query();
+            String selectSql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + where.query();
 
             JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), true);
 

@@ -269,7 +269,7 @@ public class TableData {
                 return true;
             }
             // Redirect field table to target table; info.getReferencedColumn() is null unless the field has @JoinColumn
-            targetColumn = new ColumnInfo(info.field, targetColumn.tableData, targetColumn.quotedColumnName, info.getReferencedColumn());
+            targetColumn = new ColumnInfo(info.field, targetColumn.tableData, targetColumn.columnName,info.getReferencedColumn());
 
             tableColumns.put(info.columnName, targetColumn);
             tableFields.put(fieldName, targetColumn);

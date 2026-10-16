@@ -11,6 +11,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import static com.wavjaby.jdbc.processor.util.PostgresDialect.enumBindCast;
+import static com.wavjaby.jdbc.processor.util.PostgresDialect.quoteColumn;
+
 public class JdbcCodeGenerator {
 
     public record QueryAndArgs(StringBuilder query, List<CodeBlock> args) {
@@ -54,16 +57,13 @@ public class JdbcCodeGenerator {
 
                     // Query where with ignore case
                     if (!update && param.ignoreCase) {
-                        queryBuilder.append("LOWER(").append(column.quotedColumnName).append(") ").append(param.whereOperation).append(" LOWER(?)");
+                        queryBuilder.append("LOWER(").append(quoteColumn(column.columnName)).append(") ").append(param.whereOperation).append(" LOWER(?)");
                     } else if (insert) {
-                        queryBuilder.append(column.quotedColumnName);
+                        queryBuilder.append(quoteColumn(column.columnName));
                     } else {
-                        queryBuilder.append(column.quotedColumnName)
-                                .append(!update && column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?');
-                        if (column.customEnumType != null) {
-                            queryBuilder.append("::").append(column.customEnumType);
-                            if (column.isArray) queryBuilder.append("[]");
-                        }
+                        queryBuilder.append(quoteColumn(column.columnName))
+                                .append(!update && column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?')
+                                .append(enumBindCast(column, column.isArray));
                     }
 
                     String argName = param.paramName;
@@ -100,11 +100,7 @@ public class JdbcCodeGenerator {
                 for (ColumnInfo column : info.columns) {
                     if (!first) queryBuilder.append(',');
                     first = false;
-                    queryBuilder.append('?');
-                    if (column.customEnumType != null) {
-                        queryBuilder.append("::").append(column.customEnumType);
-                        if (column.isArray) queryBuilder.append("[]");
-                    }
+                    queryBuilder.append('?').append(enumBindCast(column, column.isArray));
                 }
             }
             queryBuilder.append(')');
@@ -122,13 +118,8 @@ public class JdbcCodeGenerator {
                 queryBuilder.append('?');
 
                 MethodParamInfo methodParam = sqlParam.methodParamInfo();
-                if (methodParam != null && !methodParam.columns.isEmpty()) {
-                    ColumnInfo column = methodParam.columns.getFirst();
-                    if (column.customEnumType != null) {
-                        queryBuilder.append("::").append(column.customEnumType);
-                        if (methodParam.isArray) queryBuilder.append("[]");
-                    }
-                }
+                if (methodParam != null && !methodParam.columns.isEmpty())
+                    queryBuilder.append(enumBindCast(methodParam.columns.getFirst(), methodParam.isArray));
 
                 boolean isArray = methodParam != null && methodParam.isArray;
                 boolean isEnum = methodParam != null && methodParam.isEnum;

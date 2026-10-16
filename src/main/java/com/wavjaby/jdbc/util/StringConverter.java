@@ -2,23 +2,21 @@ package com.wavjaby.jdbc.util;
 
 public class StringConverter {
 
+    /** Java name -> lower snake case identifier. Dots collapse to '_', so a qualified enum class name becomes one identifier. */
     public static String convertPropertyNameToUnderscoreName(String name) {
         StringBuilder result = new StringBuilder(name.length());
-//        result.append(Character.toUpperCase(name.charAt(0))); // H2 Database
-        
+
         char lastChar = name.charAt(0);
         result.append(Character.toLowerCase(lastChar));
 
         for (int i = 1; i < name.length(); ++i) {
             char c = name.charAt(i);
             if (Character.isUpperCase(c) && Character.isLowerCase(lastChar)) {
-//                result.append('_').append(c); // H2 Database
-                result.append('_').append(Character.toLowerCase(c)); // PostgreSQL
+                result.append('_').append(Character.toLowerCase(c));
             } else if (c == '.') {
                 result.append('_');
             } else {
-//                result.append(Character.toUpperCase(c)); // H2 Database
-                result.append(Character.toLowerCase(c)); // PostgreSQL
+                result.append(Character.toLowerCase(c));
             }
             lastChar = c;
         }

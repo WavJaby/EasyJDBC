@@ -9,7 +9,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import java.util.List;
 
-import static com.wavjaby.jdbc.processor.util.SqlGenerator.quoteSchemaTableName;
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 
 public class TableInfo {
@@ -19,7 +18,6 @@ public class TableInfo {
     public final boolean isRecord;
     public final String name;
     public final String tableFullName;
-    public final String quotedTableFullName;
     public final String classPath;
     public final String className;
     public final String classPackagePath;
@@ -52,9 +50,6 @@ public class TableInfo {
         this.name = convertPropertyNameToUnderscoreName(!table.name().isBlank() ? table.name() : className);
         this.schema = table.schema().isBlank() ? null : convertPropertyNameToUnderscoreName(table.schema());
         this.tableFullName = schema == null ? name : schema + '.' + name;
-        this.quotedTableFullName = schema == null
-                ? quoteSchemaTableName(name)
-                : quoteSchemaTableName(schema) + '.' + quoteSchemaTableName(name);
 
         this.repoIntClassElement = repoIntClassElement;
 

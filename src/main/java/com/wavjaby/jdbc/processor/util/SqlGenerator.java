@@ -1,48 +1,20 @@
 package com.wavjaby.jdbc.processor.util;
 
-import com.wavjaby.jdbc.annotation.Column;
 import com.wavjaby.jdbc.annotation.JoinColumn;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
-import com.wavjaby.jdbc.util.StringConverter;
 
 import javax.annotation.processing.Messager;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.util.*;
-import java.util.stream.Collectors;
 
+import static com.wavjaby.jdbc.processor.util.PostgresDialect.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {
-    private static final Set<String> reservedWords = readResource("/sqlReservedWords.txt");
-    private static final Set<String> unreservedWords = readResource("/sqlUnreservedWords.txt");
-    private static final Set<String> reservedColumnNames = readResource("/sqlReservedColumnNames.txt");
-    private static final Set<String> reservedTypeFuncNames = readResource("/sqlReservedTypeFuncNames.txt");
-
-    private static Set<String> readResource(String path) {
-        try (InputStream stream = Objects.requireNonNull(SqlGenerator.class.getResourceAsStream(path));
-             BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
-            return reader.lines()
-                    .map(String::trim)
-                    .map(String::toLowerCase)
-                    .collect(Collectors.toSet());
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read resource: " + path, e);
-        }
-    }
-
     public static boolean generateCreateViewSql(TableData tableData, StringBuilder builder, Messager console) {
         TableInfo tableInfo = tableData.tableInfo;
         TableData base = tableData.getVirtualBaseTableData();
@@ -50,7 +22,7 @@ public class SqlGenerator {
 
         StringBuilder joinSql = new StringBuilder();
 
-        builder.append("CREATE OR REPLACE VIEW ").append(tableInfo.quotedTableFullName).append(" AS SELECT ");
+        builder.append("CREATE OR REPLACE VIEW ").append(quoteTable(tableInfo)).append(" AS SELECT ");
         boolean first = true;
         Map<TableData, List<ColumnInfo>> joinInfoMap = new LinkedHashMap<>();
         for (ColumnInfo columnInfo : tableData.tableFields.values()) {
@@ -58,18 +30,18 @@ public class SqlGenerator {
             first = false;
 
             String targetTableFullName = base.equals(columnInfo.tableData)
-                    ? baseTableShortName : columnInfo.tableInfo.quotedTableFullName;
+                    ? baseTableShortName : quoteTable(columnInfo.tableInfo);
 
             if (columnInfo.defaultValue != null)
                 builder.append("COALESCE(");
 
-            String sourceColumnName = columnInfo.getQuotedSourceColumnName();
-            builder.append(targetTableFullName).append('.').append(sourceColumnName);
+            String sourceColumnName = columnInfo.getSourceColumnName();
+            builder.append(targetTableFullName).append('.').append(quoteColumn(sourceColumnName));
 
             if (columnInfo.defaultValue != null)
                 builder.append(", ").append(columnInfo.defaultValue).append(')');
-            if (columnInfo.defaultValue != null || !sourceColumnName.equals(columnInfo.quotedColumnName))
-                builder.append(" as ").append(columnInfo.quotedColumnName);
+            if (columnInfo.defaultValue != null || !sourceColumnName.equals(columnInfo.columnName))
+                builder.append(" as ").append(quoteColumn(columnInfo.columnName));
 
             // Add reference column join info
             if (columnInfo.joinColumn != null) {
@@ -82,27 +54,27 @@ public class SqlGenerator {
         for (Map.Entry<TableData, List<ColumnInfo>> entry : joinInfoMap.entrySet()) {
             TableData referenceTable = entry.getKey();
             String referenceTableFullName = base.equals(referenceTable)
-                    ? baseTableShortName : referenceTable.tableInfo.quotedTableFullName;
+                    ? baseTableShortName : quoteTable(referenceTable.tableInfo);
             joinSql.append("\n");
             joinSql.append("    LEFT JOIN ").append(referenceTableFullName).append(" ON ");
 
             boolean firstJoin = true;
             for (ColumnInfo columnInfo : entry.getValue()) {
                 String targetTableFullName = base.equals(columnInfo.tableData)
-                        ? baseTableShortName : columnInfo.tableInfo.quotedTableFullName;
+                        ? baseTableShortName : quoteTable(columnInfo.tableInfo);
 
                 ColumnInfo referenceColumn = columnInfo.getReferencedColumn();
 
                 if (!firstJoin)
                     joinSql.append(" AND ");
                 firstJoin = false;
-                joinSql.append(targetTableFullName).append('.').append(columnInfo.getQuotedSourceColumnName()).append('=')
-                        .append(referenceTableFullName).append('.').append(referenceColumn.quotedColumnName);
+                joinSql.append(targetTableFullName).append('.').append(quoteColumn(columnInfo.getSourceColumnName())).append('=')
+                        .append(referenceTableFullName).append('.').append(quoteColumn(referenceColumn.columnName));
             }
         }
 
         builder.append("\n");
-        builder.append("    FROM ").append(base.tableInfo.quotedTableFullName).append(" ").append(baseTableShortName);
+        builder.append("    FROM ").append(quoteTable(base.tableInfo)).append(" ").append(baseTableShortName);
         builder.append(joinSql);
         builder.append(";");
 
@@ -111,7 +83,7 @@ public class SqlGenerator {
 
     public static boolean generateCreateTableSql(TableData tableData, StringBuilder builder, Messager console) {
         TableInfo tableInfo = tableData.tableInfo;
-        builder.append("CREATE TABLE IF NOT EXISTS ").append(tableInfo.quotedTableFullName).append("(");
+        builder.append("CREATE TABLE IF NOT EXISTS ").append(quoteTable(tableInfo)).append("(");
         boolean first = true;
         for (Map.Entry<String, ColumnInfo> entry : tableData.tableFields.entrySet()) {
             ColumnInfo columnInfo = entry.getValue();
@@ -123,7 +95,7 @@ public class SqlGenerator {
             boolean columnDef = columnInfo.column != null;
 
             // column name
-            builder.append("    ").append(columnInfo.quotedColumnName);
+            builder.append("    ").append(quoteColumn(columnInfo.columnName));
 
             // If column define by user
             if (columnDef && !columnInfo.column.columnDefinition().isEmpty()) {
@@ -152,7 +124,7 @@ public class SqlGenerator {
             builder.append(" PRIMARY KEY(");
             for (int i = 0; i < tableData.primaryKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(tableData.primaryKey.get(i).quotedColumnName);
+                builder.append(quoteColumn(tableData.primaryKey.get(i).columnName));
             }
             builder.append(")");
         }
@@ -161,7 +133,7 @@ public class SqlGenerator {
             builder.append("    CONSTRAINT").append(tableInfo.getUniqueKey(uniqueKey)).append(" UNIQUE (");
             for (int i = 0; i < uniqueKey.size(); i++) {
                 if (i != 0) builder.append(',');
-                builder.append(uniqueKey.get(i).quotedColumnName);
+                builder.append(quoteColumn(uniqueKey.get(i).columnName));
             }
             builder.append(")");
         }
@@ -172,7 +144,7 @@ public class SqlGenerator {
             builder.append(",\n");
             builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
                     .append(String.join(",", foreignKeyGroup.sourceColumns).toLowerCase()).append(") REFERENCES ")
-                    .append(foreignKeyGroup.referencedTable.quotedTableFullName).append("(").append(String.join(",", foreignKeyGroup.referencedColumns).toLowerCase()).append(")");
+                    .append(quoteTable(foreignKeyGroup.referencedTable)).append("(").append(String.join(",", foreignKeyGroup.referencedColumns).toLowerCase()).append(")");
             appendReferentialAction(builder, "ON UPDATE", foreignKeyGroup.onUpdate);
             appendReferentialAction(builder, "ON DELETE", foreignKeyGroup.onDelete);
         }
@@ -192,7 +164,7 @@ public class SqlGenerator {
     private static boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql, Messager console) {
         VariableElement field = columnInfo.field;
         TypeMirror type = field.asType();
-        String columnType = toSqlType(type, columnInfo.column);
+        String columnType = columnType(type, columnInfo.column);
         if (columnType == null) {
             console.printMessage(ERROR, "Unknown SQL type for: " + field.asType().toString(), field);
             return true;
@@ -210,7 +182,7 @@ public class SqlGenerator {
             builder.append(" ORDER BY ");
             for (int i = 0; i < methodInfo.orderBy.length; i++) {
                 ColumnInfo column = methodInfo.orderBy[i].column();
-                builder.append(column.quotedColumnName).append(" ").append(methodInfo.orderBy[i].direction().name());
+                builder.append(quoteColumn(column.columnName)).append(" ").append(methodInfo.orderBy[i].direction().name());
                 if (i < methodInfo.orderBy.length - 1)
                     builder.append(", ");
             }
@@ -218,102 +190,5 @@ public class SqlGenerator {
         if (methodInfo.limit != null)
             builder.append(" LIMIT ").append(methodInfo.limit);
         return builder;
-    }
-
-    public static String quoteColumnName(String columnName) {
-        if (reservedWords.contains(columnName) || reservedColumnNames.contains(columnName) || reservedTypeFuncNames.contains(columnName))
-            return '"' + columnName + '"';
-        return columnName;
-    }
-
-    public static String quoteSchemaTableName(String tableName) {
-        if (reservedWords.contains(tableName) || reservedTypeFuncNames.contains(tableName) || unreservedWords.contains(tableName))
-            return '"' + tableName + '"';
-        return tableName;
-    }
-
-    public static String toSqlType(TypeMirror type, Column column) {
-        TypeKind kind = type.getKind();
-
-
-        if (type instanceof DeclaredType declaredType) {
-            String typeName = type.toString();
-            // String
-            if (typeName.startsWith(String.class.getName())) {
-                if (column != null && column.length() != -1) {
-                    return "VARCHAR(" + column.length() + ")";
-                }
-                return "VARCHAR";
-            }
-
-            // Check if type is java.util.List
-            else if (declaredType.asElement().toString().equals(List.class.getName())) {
-                TypeMirror componentType = declaredType.getTypeArguments().get(0);
-                return toSqlType(componentType, column) + " ARRAY";
-            } else if (type.toString().equals(java.sql.Date.class.getName()) ||
-                    type.toString().equals(java.time.LocalDate.class.getName())) {
-                return "DATE";
-            } else if (type.toString().equals(java.sql.Timestamp.class.getName())) {
-                return "TIMESTAMP";
-            }
-            // Prefer BigDecimal over double for any NUMERIC column queried by equality or range: it is the only Java type that also binds as numeric
-            else if (typeName.startsWith(java.math.BigDecimal.class.getName())) {
-                return numericType(column);
-            }
-            // Check if type is enum
-            else if (declaredType.asElement() instanceof TypeElement typeElement && typeElement.getKind() == ElementKind.ENUM) {
-                if (column != null && column.length() != -1) {
-                    return "VARCHAR(" + column.length() + ")";
-                }
-                return StringConverter.convertPropertyNameToUnderscoreName(type.toString());
-            } else if (typeName.startsWith(Boolean.class.getName())) kind = TypeKind.BOOLEAN;
-            else if (typeName.startsWith(Byte.class.getName())) kind = TypeKind.BYTE;
-            else if (typeName.startsWith(Short.class.getName())) kind = TypeKind.SHORT;
-            else if (typeName.startsWith(Integer.class.getName())) kind = TypeKind.INT;
-            else if (typeName.startsWith(Long.class.getName())) kind = TypeKind.LONG;
-            else if (typeName.startsWith(Float.class.getName())) kind = TypeKind.FLOAT;
-            else if (typeName.startsWith(Double.class.getName())) kind = TypeKind.DOUBLE;
-            else if (typeName.startsWith(Character.class.getName())) kind = TypeKind.CHAR;
-        }
-
-        if (type instanceof ArrayType arrayType) {
-            TypeMirror arrType = arrayType.getComponentType();
-
-            // Auto-detect byte[] to BYTEA
-            if (arrType.getKind() == TypeKind.BYTE)
-                return "BYTEA";
-
-            return toSqlType(arrType, column) + " ARRAY";
-        }
-
-        switch (kind) {
-            case BOOLEAN:
-                return "BOOLEAN";
-            case BYTE:
-                return "SMALLINT";
-            case SHORT:
-                return "SMALLINT";
-            case INT:
-                return "INTEGER";
-            case LONG:
-                return "BIGINT";
-            case FLOAT:
-                return "REAL";
-            case DOUBLE:
-                // precision/scale on a double still yields NUMERIC, kept for existing schemas; the parameter binds as DOUBLE PRECISION
-                return column != null && column.precision() != 0 ? numericType(column) : "DOUBLE PRECISION";
-            case CHAR:
-                return "CHAR(1)";
-            default:
-                return null;
-        }
-    }
-
-    private static String numericType(Column column) {
-        if (column == null || column.precision() == 0)
-            return "NUMERIC";
-        return column.scale() != 0
-                ? "NUMERIC(" + column.precision() + "," + column.scale() + ")"
-                : "NUMERIC(" + column.precision() + ")";
     }
 }

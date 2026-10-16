@@ -1,7 +1,6 @@
 package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.annotation.*;
-import com.wavjaby.jdbc.processor.util.SqlGenerator;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;
@@ -28,10 +27,9 @@ public class ColumnInfo {
     public final boolean isArray;
     public final boolean isList;
     public final boolean isEnum;
-    public final String customEnumType;
+    public final boolean nativeEnum; // stored as a database enum type, not VARCHAR
 
     public final String columnName; // lower snake case
-    public final String quotedColumnName;
     public final boolean nullable;
     public final boolean isPrimaryKey;
     public final boolean isUniqueKey;
@@ -46,18 +44,18 @@ public class ColumnInfo {
     // Set by processTableJoin in the link pass; cross-table links are by instance, so this cannot be final until resolve owns them
     private ColumnInfo referencedColumn;
 
-    // @FieldName source column. Defaults to quotedColumnName so non-virtual tables read it without branching
-    private final String quotedSourceColumnName;
+    // @FieldName source column. Defaults to columnName so non-virtual tables read it without branching
+    private final String sourceColumnName;
 
     public ColumnInfo(VariableElement field, TableData tableData) {
         this(field, tableData, null, null);
     }
 
     /**
-     * Virtual-table column: declared by {@code field}, stored in {@code tableData}'s table under {@code quotedSourceColumnName}.
-     * Null {@code quotedSourceColumnName} -> the column's own name.
+     * Virtual-table column: declared by {@code field}, stored in {@code tableData}'s table under {@code sourceColumnName}.
+     * Null {@code sourceColumnName} -> the column's own name.
      */
-    ColumnInfo(VariableElement field, TableData tableData, String quotedSourceColumnName, ColumnInfo referencedColumn) {
+    ColumnInfo(VariableElement field, TableData tableData, String sourceColumnName, ColumnInfo referencedColumn) {
         this.referencedColumn = referencedColumn;
         this.column = field.getAnnotation(Column.class);
         this.tableInfo = tableData.tableInfo;
@@ -112,16 +110,14 @@ public class ColumnInfo {
         this.isArray = isArray;
         this.isList = isList;
         this.isEnum = isEnum;
-        this.customEnumType = isEnum && column == null
-                ? convertPropertyNameToUnderscoreName(this.type.toString()) : null;
+        this.nativeEnum = isEnum && column == null;
 
         // Get column info
         this.isPrimaryKey = field.getAnnotation(Id.class) != null;
         ColumnDefault columnDefault = field.getAnnotation(ColumnDefault.class);
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
         this.columnName = getColumnName(field);
-        this.quotedColumnName = SqlGenerator.quoteColumnName(this.columnName);
-        this.quotedSourceColumnName = quotedSourceColumnName != null ? quotedSourceColumnName : this.quotedColumnName;
+        this.sourceColumnName = sourceColumnName != null ? sourceColumnName : this.columnName;
 
         boolean isUniqueKey = false;
         boolean isGroupedUniqueKey = false;
@@ -229,8 +225,8 @@ public class ColumnInfo {
         return false;
     }
 
-    public String getQuotedSourceColumnName() {
-        return quotedSourceColumnName;
+    public String getSourceColumnName() {
+        return sourceColumnName;
     }
 
     public ColumnInfo getReferencedColumn() {
