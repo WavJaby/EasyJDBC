@@ -23,6 +23,17 @@ public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent
 
   public void initSchemeAndTable() {
     jdbc.execute("""
+        DO
+        $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fx_mood') THEN
+                CREATE TYPE fx_mood AS ENUM (
+                'CALM', 'ANGRY'
+                );
+            END IF;
+        END
+        $$;""");
+    jdbc.execute("""
         CREATE TABLE IF NOT EXISTS diary(
             id BIGINT NOT NULL,
             mood fx_mood NOT NULL,
@@ -61,13 +72,13 @@ public class DiaryRepositoryImpl implements DiaryRepository {
 
   @Override
   public Diary save(Diary row) {
-    jdbc.update("INSERT INTO diary (id,mood,mood_text)VALUES(?,?,?)", row.id(), row.mood().name(), row.moodText() == null ? null : row.moodText().name());
+    jdbc.update("INSERT INTO diary (id,mood,mood_text)VALUES(?,?::fx_mood,?)", row.id(), row.mood().name(), row.moodText() == null ? null : row.moodText().name());
     return new Diary(row.id(), row.mood(), row.moodText());
   }
 
   @Override
   public List<Diary> getByMood(Mood mood) {
-    return jdbc.query("SELECT id,mood,mood_text FROM diary WHERE mood=?", tableMapper, mood.name());
+    return jdbc.query("SELECT id,mood,mood_text FROM diary WHERE mood=?::fx_mood", tableMapper, mood.name());
   }
 
   @Override

@@ -90,7 +90,9 @@ public final class PostgresDialect {
         return "::" + enumTypeName(column.type) + (array ? "[]" : "");
     }
 
-    public static String columnType(TypeMirror type, Column column) {
+    // Not reached for @Column(columnDefinition): that text is the column type verbatim
+    public static String columnType(TypeMirror type, ColumnInfo columnInfo) {
+        Column column = columnInfo.column;
         TypeKind kind = type.getKind();
 
 
@@ -107,7 +109,7 @@ public final class PostgresDialect {
             // Check if type is java.util.List
             else if (declaredType.asElement().toString().equals(List.class.getName())) {
                 TypeMirror componentType = declaredType.getTypeArguments().get(0);
-                return columnType(componentType, column) + " ARRAY";
+                return columnType(componentType, columnInfo) + " ARRAY";
             } else if (type.toString().equals(java.sql.Date.class.getName()) ||
                     type.toString().equals(java.time.LocalDate.class.getName())) {
                 return "DATE";
@@ -120,10 +122,8 @@ public final class PostgresDialect {
             }
             // Check if type is enum
             else if (declaredType.asElement() instanceof TypeElement typeElement && typeElement.getKind() == ElementKind.ENUM) {
-                if (column != null && column.length() != -1) {
-                    return "VARCHAR(" + column.length() + ")";
-                }
-                return enumTypeName(type);
+                // columnDefinition never gets here, so a non-native enum is the @Column(length) one
+                return columnInfo.nativeEnum ? enumTypeName(type) : "VARCHAR(" + column.length() + ")";
             } else if (typeName.startsWith(Boolean.class.getName())) kind = TypeKind.BOOLEAN;
             else if (typeName.startsWith(Byte.class.getName())) kind = TypeKind.BYTE;
             else if (typeName.startsWith(Short.class.getName())) kind = TypeKind.SHORT;
@@ -141,7 +141,7 @@ public final class PostgresDialect {
             if (arrType.getKind() == TypeKind.BYTE)
                 return "BYTEA";
 
-            return columnType(arrType, column) + " ARRAY";
+            return columnType(arrType, columnInfo) + " ARRAY";
         }
 
         switch (kind) {

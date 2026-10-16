@@ -110,7 +110,8 @@ public class ColumnInfo {
         this.isArray = isArray;
         this.isList = isList;
         this.isEnum = isEnum;
-        this.nativeEnum = isEnum && column == null;
+        // @Column(length) -> VARCHAR(length); columnDefinition -> the user owns the type. Anything else on @Column leaves storage alone
+        this.nativeEnum = isEnum && (column == null || column.length() == -1 && column.columnDefinition().isEmpty());
 
         // Get column info
         this.isPrimaryKey = field.getAnnotation(Id.class) != null;

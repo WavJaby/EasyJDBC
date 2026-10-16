@@ -5,8 +5,8 @@ import com.wavjaby.jdbc.annotation.Id;
 import com.wavjaby.jdbc.annotation.Table;
 
 /**
- * An enum with @Column but no length. Two rules decide "native enum type?" for it and they disagree:
- * the column type takes the native enum (only @Column(length) switches to VARCHAR), while the CREATE TYPE and the ::type bind cast are skipped (any @Column switches them off).
+ * An enum with @Column but no length stays a native enum type: column type, CREATE TYPE and ::type bind cast must agree.
+ * Until 2026-10-17 two rules decided this and disagreed -- the column got the enum type while CREATE TYPE and the cast were skipped.
  */
 @Table(repositoryClass = DiaryRepository.class)
 public record Diary(

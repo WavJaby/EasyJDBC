@@ -164,7 +164,7 @@ public class SqlGenerator {
     private static boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql, Messager console) {
         VariableElement field = columnInfo.field;
         TypeMirror type = field.asType();
-        String columnType = columnType(type, columnInfo.column);
+        String columnType = columnType(type, columnInfo);
         if (columnType == null) {
             console.printMessage(ERROR, "Unknown SQL type for: " + field.asType().toString(), field);
             return true;
