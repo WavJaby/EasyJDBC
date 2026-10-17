@@ -31,6 +31,12 @@ public @interface JoinColumn {
 
     Action onDelete() default Action.NO_ACTION;
 
+    /**
+     * Composite FK membership. Fields of one table sharing a group form one FOREIGN KEY, in field order: same referenced table, same actions,
+     * and together they must reference the referenced table's primary key or one of its unique constraints. Empty -> a single-column FK of its own.
+     */
+    String group() default "";
+
     String columnDefinition() default "";
 
     String table() default "";

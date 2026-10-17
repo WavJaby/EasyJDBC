@@ -1,0 +1,103 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS parent(
+            id BIGINT NOT NULL,
+            code VARCHAR,
+            CONSTRAINT parent_PK PRIMARY KEY(id),
+            CONSTRAINT parent_code_UK UNIQUE (code)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS child(
+            id BIGINT NOT NULL,
+            first_parent_id BIGINT NOT NULL,
+            second_parent_id BIGINT NOT NULL,
+            parent_code VARCHAR NOT NULL,
+            CONSTRAINT child_PK PRIMARY KEY(id),
+            CONSTRAINT child_first_parent_id_FK FOREIGN KEY (first_parent_id) REFERENCES parent(id),
+            CONSTRAINT child_second_parent_id_FK FOREIGN KEY (second_parent_id) REFERENCES parent(id),
+            CONSTRAINT child_parent_code_FK FOREIGN KEY (parent_code) REFERENCES parent(code)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/ChildRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ChildRepositoryImpl implements ChildRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Child> tableMapper;
+
+  public ChildRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Child.class, 4);
+  }
+
+  @Override
+  public Child save(Child row) {
+    jdbc.update("INSERT INTO child (id,first_parent_id,second_parent_id,parent_code)VALUES(?,?,?,?)", row.id(), row.firstParentId(), row.secondParentId(), row.parentCode());
+    return new Child(row.id(), row.firstParentId(), row.secondParentId(), row.parentCode());
+  }
+}
+
+=== generated: fx/ParentRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ParentRepositoryImpl implements ParentRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Parent> tableMapper;
+
+  public ParentRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Parent.class, 2);
+  }
+
+  @Override
+  public Parent save(Parent row) {
+    jdbc.update("INSERT INTO parent (id,code)VALUES(?,?)", row.id(), row.code());
+    return new Parent(row.id(), row.code());
+  }
+}

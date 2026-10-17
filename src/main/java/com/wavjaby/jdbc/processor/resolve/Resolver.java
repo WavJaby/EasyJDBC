@@ -150,84 +150,69 @@ public final class Resolver {
     }
 
     /**
-     * Columns referencing different columns of one table share a composite constraint; two columns referencing the same column each get their own.
-     * Membership is inferred, not declared: two unrelated single-column FKs to one table merge into one composite constraint.
+     * One FOREIGN KEY per @JoinColumn, or per JoinColumn.group: a group shares one referenced table and one ON UPDATE / ON DELETE, members in field order.
+     * Each must reference the referenced table's primary key or one of its unique constraints -- PostgreSQL refuses anything else at CREATE TABLE.
+     * A view gets none: its @JoinColumn is a JOIN, which may follow any column.
      */
     private List<ForeignKeyGroup> groupForeignKeys(TableData table, Map<ColumnInfo, ColumnInfo> references) {
-        List<GroupBuilder> groups = new ArrayList<>();
+        if (table.tableInfo.isVirtual)
+            return List.of();
+
+        // An ungrouped column is keyed by itself, so it stays alone
+        Map<Object, List<ColumnInfo>> members = new LinkedHashMap<>();
         for (ColumnInfo column : table.tableFields.values()) {
-            ColumnInfo referencedColumn = references.get(column);
-            if (referencedColumn == null) continue;
+            if (references.get(column) == null) continue;
+            String group = column.joinColumn.group();
+            members.computeIfAbsent(group.isEmpty() ? column : group, k -> new ArrayList<>()).add(column);
+        }
 
-            boolean addToGroup = true;
-            for (ColumnInfo target : table.tableFields.values()) {
-                ColumnInfo otherReferencedColumn = references.get(target);
-                if (otherReferencedColumn == null) continue;
-                if (column == target)
-                    continue;
-
-                if (referencedColumn.tableInfo.equals(otherReferencedColumn.tableInfo) &&
-                        referencedColumn.columnName.equals(otherReferencedColumn.columnName)) {
-                    addToGroup = false;
-                    break;
-                }
-            }
-
-            // have duplicated target columns, create new group
-            if (!addToGroup) {
-                GroupBuilder group = new GroupBuilder(referencedColumn.tableInfo,
-                        Collections.singletonList(referencedColumn.columnName), Collections.singletonList(column.columnName));
-                group.applyActions(column.joinColumn);
-                groups.add(group);
-            } else {
-                // Find group to add
-                GroupBuilder foreignKeyGroup = null;
-                for (GroupBuilder group : groups) {
-                    if (group.referencedTable.name.equals(referencedColumn.tableInfo.name)) {
-                        foreignKeyGroup = group;
-                        break;
-                    }
-                }
-                if (foreignKeyGroup == null) {
-                    foreignKeyGroup = new GroupBuilder(referencedColumn.tableInfo, new ArrayList<>(), new ArrayList<>());
-                    groups.add(foreignKeyGroup);
-                }
-
-                if (!foreignKeyGroup.applyActions(column.joinColumn)) {
-                    console.printMessage(ERROR, "onUpdate/onDelete differ from the other columns of the composite foreign key to " + referencedColumn.tableInfo.name, column.field);
+        List<ForeignKeyGroup> foreignKeys = new ArrayList<>();
+        for (List<ColumnInfo> columns : members.values()) {
+            ColumnInfo first = columns.getFirst();
+            TableData referencedTable = references.get(first).tableData;
+            JoinColumn.Action onUpdate = first.joinColumn.onUpdate(), onDelete = first.joinColumn.onDelete();
+            List<String> sourceColumns = new ArrayList<>(), referencedColumns = new ArrayList<>();
+            for (ColumnInfo column : columns) {
+                ColumnInfo referenced = references.get(column);
+                if (referenced.tableData != referencedTable) {
+                    console.printMessage(ERROR, "@JoinColumn group '" + column.joinColumn.group() + "' references both '" + referencedTable.tableInfo.classPath +
+                            "' and '" + referenced.tableData.tableInfo.classPath + "': one foreign key references one table", column.field);
                     return null;
                 }
-                foreignKeyGroup.sourceColumns.add(column.columnName);
-                foreignKeyGroup.referencedColumns.add(referencedColumn.columnName);
+                if (column.joinColumn.onUpdate() != onUpdate || column.joinColumn.onDelete() != onDelete) {
+                    console.printMessage(ERROR, "onUpdate/onDelete differ from the other columns of the composite foreign key to " + referencedTable.tableInfo.name, column.field);
+                    return null;
+                }
+                sourceColumns.add(column.columnName);
+                referencedColumns.add(referenced.columnName);
             }
+            if (!isKey(referencedTable, referencedColumns)) {
+                console.printMessage(ERROR, "Foreign key (" + String.join(",", sourceColumns) + ") references (" + String.join(",", referencedColumns) + ") of '" +
+                        referencedTable.tableInfo.classPath + "', which is neither its primary key nor one of its unique constraints", first.field);
+                return null;
+            }
+            foreignKeys.add(new ForeignKeyGroup(referencedTable.tableInfo, List.copyOf(referencedColumns), List.copyOf(sourceColumns), onUpdate, onDelete));
         }
-        return groups.stream().map(GroupBuilder::build).toList();
+        return foreignKeys;
     }
 
-    private static final class GroupBuilder {
-        final TableInfo referencedTable;
-        final List<String> referencedColumns;
-        final List<String> sourceColumns;
-        // null until the first column joins the group; every later column must declare the same actions
-        JoinColumn.Action onUpdate, onDelete;
-
-        GroupBuilder(TableInfo referencedTable, List<String> referencedColumns, List<String> sourceColumns) {
-            this.referencedTable = referencedTable;
-            this.referencedColumns = referencedColumns;
-            this.sourceColumns = sourceColumns;
-        }
-
-        // false on conflict: one constraint carries one ON UPDATE / ON DELETE, so composite FK columns cannot disagree
-        boolean applyActions(JoinColumn joinColumn) {
-            if (onUpdate != null && (onUpdate != joinColumn.onUpdate() || onDelete != joinColumn.onDelete()))
-                return false;
-            onUpdate = joinColumn.onUpdate();
-            onDelete = joinColumn.onDelete();
+    // Exactly the primary key or one unique constraint, as a set; a column named twice is never a key
+    private static boolean isKey(TableData table, List<String> columns) {
+        Set<String> wanted = new HashSet<>(columns);
+        if (wanted.size() != columns.size())
+            return false;
+        if (columnNames(table.primaryKey).equals(wanted))
             return true;
-        }
+        for (List<ColumnInfo> uniqueKey : table.uniqueKeyList)
+            if (columnNames(uniqueKey).equals(wanted))
+                return true;
+        return false;
+    }
 
-        ForeignKeyGroup build() {
-            return new ForeignKeyGroup(referencedTable, referencedColumns, sourceColumns, onUpdate, onDelete);
-        }
+    private static Set<String> columnNames(List<ColumnInfo> columns) {
+        Set<String> names = new HashSet<>();
+        for (ColumnInfo column : columns)
+            names.add(column.columnName);
+        return names;
     }
 }

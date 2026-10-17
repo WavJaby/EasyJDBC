@@ -35,7 +35,8 @@ public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent
             buyer_id BIGINT NOT NULL,
             seller_code VARCHAR NOT NULL,
             CONSTRAINT trade_PK PRIMARY KEY(id),
-            CONSTRAINT trade_buyer_id__seller_code_FK FOREIGN KEY (buyer_id,seller_code) REFERENCES account(id,code)
+            CONSTRAINT trade_buyer_id_FK FOREIGN KEY (buyer_id) REFERENCES account(id),
+            CONSTRAINT trade_seller_code_FK FOREIGN KEY (seller_code) REFERENCES account(code)
         );""");
   }
 

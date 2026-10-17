@@ -1,2 +1,0 @@
-=== diagnostics (1) ===
-ERROR -: EasyJDBC processor internal error, a processor bug rather than a problem in your code: java.lang.UnsupportedOperationException in com.wavjaby.jdbc.processor.resolve.Resolver.groupForeignKeys

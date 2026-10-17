@@ -5,9 +5,8 @@ import com.wavjaby.jdbc.annotation.JoinColumn;
 import com.wavjaby.jdbc.annotation.Table;
 
 /**
- * Crashes the processor today: firstParentId and secondParentId share a target, so each gets a fixed-size one-column FK group;
- * parentCode targets another column of the same table, joins the first of those groups by table name, and adding to it throws.
- * Kept as the input that proves an internal exception surfaces as a compile error instead of vanishing.
+ * Three ungrouped FKs into one table, two sharing a target column: three single-column constraints.
+ * Membership used to be inferred, and this mix crashed the inference (a fixed-size group was added to).
  */
 @Table(repositoryClass = ChildRepository.class)
 public record Child(
