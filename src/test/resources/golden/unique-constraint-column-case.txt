@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR Tag.java: Column 'TENANT_ID' not exist in table: tag

@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR Item.java: Referenced column 'OWNER_CODE' not exist in table 'fx.Owner'
