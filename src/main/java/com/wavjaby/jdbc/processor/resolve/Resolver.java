@@ -152,7 +152,7 @@ public final class Resolver {
 
     /**
      * One FOREIGN KEY per @JoinColumn, or per JoinColumn.group: a group shares one referenced table and one ON UPDATE / ON DELETE, members in field order.
-     * Each must reference the referenced table's primary key or one of its unique constraints -- PostgreSQL refuses anything else at CREATE TABLE.
+     * Each must reference a table (not a view) and its primary key or one of its unique constraints -- PostgreSQL refuses anything else at CREATE TABLE.
      * A view gets none: its @JoinColumn is a JOIN, which may follow any column.
      */
     private List<ForeignKeyGroup> groupForeignKeys(TableData table, Map<ColumnInfo, ColumnInfo> references) throws EmptyProcessingException {
@@ -186,6 +186,11 @@ public final class Resolver {
                 }
                 sourceColumns.add(column.columnName);
                 referencedColumns.add(referenced.columnName);
+            }
+            if (referencedTable.tableInfo.isVirtual) {
+                console.printMessage(ERROR, "Foreign key (" + String.join(",", sourceColumns) + ") references view '" + referencedTable.tableInfo.classPath +
+                        "': PostgreSQL accepts no foreign key to a view; reference its base table '" + referencedTable.tableInfo.virtualBaseClass + "' instead", first.field);
+                throw new EmptyProcessingException();
             }
             if (!isKey(referencedTable, referencedColumns)) {
                 console.printMessage(ERROR, "Foreign key (" + String.join(",", sourceColumns) + ") references (" + String.join(",", referencedColumns) + ") of '" +
