@@ -88,16 +88,13 @@ public class TableData {
             }
             // Fet unique constraint column by column name
             for (String name : uniqueConstraint.columnNames()) {
-                if (!this.tableColumns.containsKey(name)) {
+                ColumnInfo columnInfo = this.tableColumns.get(ColumnInfo.foldColumnName(name));
+                if (columnInfo == null) {
                     AnnotationValue column = getAnnotationValue(uniqueConstraintMirror, "columnNames");
                     console.printMessage(ERROR, "Column '" + name + "' not exist in table: " + tableInfo.name, tableInfo.tableClassEle, uniqueConstraintMirror, column);
                     throw new EmptyProcessingException();
                 }
-                for (ColumnInfo columnInfo : this.tableFields.values()) {
-                    if (!columnInfo.columnName.equals(name)) continue;
-                    uniqueKey.add(columnInfo);
-                    break;
-                }
+                uniqueKey.add(columnInfo);
             }
             uniqueKeyList.add(uniqueKey);
             index++;

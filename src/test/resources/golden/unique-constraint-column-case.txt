@@ -1,2 +1,74 @@
-=== diagnostics (1) ===
-ERROR Tag.java: Column 'TENANT_ID' not exist in table: tag
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS tag(
+            id BIGINT NOT NULL,
+            tenant_id BIGINT NOT NULL,
+            label VARCHAR,
+            CONSTRAINT tag_PK PRIMARY KEY(id),
+            CONSTRAINT tag_tenant_id_label_UK UNIQUE (tenant_id,label)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/TagRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class TagRepositoryImpl implements TagRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Tag> tableMapper;
+
+  public TagRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Tag.class, 3);
+  }
+
+  @Override
+  public Tag save(Tag row) {
+    jdbc.update("INSERT INTO tag (id,tenant_id,label)VALUES(?,?,?)", row.id(), row.tenantId(), row.label());
+    return new Tag(row.id(), row.tenantId(), row.label());
+  }
+
+  @Override
+  public Tag getById(long id) {
+    List<Tag> result = jdbc.query("SELECT id,tenant_id,label FROM tag WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}

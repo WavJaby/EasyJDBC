@@ -152,8 +152,8 @@ public class SqlGenerator {
 
             builder.append(",\n");
             builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
-                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ")
-                    .append(quoteTable(foreignKeyGroup.referencedTable())).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
+                    .append(String.join(",", foreignKeyGroup.sourceColumns())).append(") REFERENCES ")
+                    .append(quoteTable(foreignKeyGroup.referencedTable())).append("(").append(String.join(",", foreignKeyGroup.referencedColumns())).append(")");
             appendReferentialAction(builder, "ON UPDATE", foreignKeyGroup.onUpdate());
             appendReferentialAction(builder, "ON DELETE", foreignKeyGroup.onDelete());
         }

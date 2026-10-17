@@ -10,6 +10,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.*;
 import java.util.List;
+import java.util.Locale;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClass;
@@ -167,19 +168,17 @@ public class ColumnInfo {
         }
     }
 
+    /** Column names are case-folded (unquoted SQL identifiers): a name given in an annotation is looked up through this, never verbatim. Locale.ROOT -> a Turkish default locale would fold "ID" to "ıd" */
+    public static String foldColumnName(String name) {
+        return name.toLowerCase(Locale.ROOT);
+    }
+
     private String getColumnName(Element field) {
         if (column != null && !column.name().isEmpty())
-            return column.name().toLowerCase();
-
-        if (joinColumn != null) {
-            if (!joinColumn.name().isEmpty()) {
-                return joinColumn.name().toLowerCase();
-            } else {
-                return convertPropertyNameToUnderscoreName(field.getSimpleName().toString()).toLowerCase();
-            }
-        }
-
-        return convertPropertyNameToUnderscoreName(field.getSimpleName().toString()).toLowerCase();
+            return foldColumnName(column.name());
+        if (joinColumn != null && !joinColumn.name().isEmpty())
+            return foldColumnName(joinColumn.name());
+        return foldColumnName(convertPropertyNameToUnderscoreName(field.getSimpleName().toString()));
     }
 
 }

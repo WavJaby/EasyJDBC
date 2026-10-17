@@ -82,7 +82,7 @@ public final class Resolver {
 
         ColumnInfo referencedColumnInfo;
         if (!joinColumn.referencedColumnName().isEmpty()) {
-            referencedColumnInfo = referencedTableData.tableColumns.get(joinColumn.referencedColumnName());
+            referencedColumnInfo = referencedTableData.tableColumns.get(ColumnInfo.foldColumnName(joinColumn.referencedColumnName()));
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced column '" + joinColumn.referencedColumnName() + "' not exist in table '" + column.referencedTableClassPath + "'", column.field);
                 throw new EmptyProcessingException();
