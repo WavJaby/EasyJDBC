@@ -168,7 +168,6 @@ public class RepositoryEmitter {
         List<MethodParamInfo> infos = new ArrayList<>(methodInfo.params);
 
         CodeBlock idGenerator = JdbcCodeGenerator.addIdGenerator(tableData, infos);
-        CodeBlock enumString = JdbcCodeGenerator.checkAndConvertEnumToStringArray(infos);
 
         JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.insert(infos, methodInfo);
 
@@ -180,7 +179,6 @@ public class RepositoryEmitter {
                     List.class, ArrayList.class, param.paramName);
             methodBuilder.beginControlFlow("for ($L $L : $L_)", typeStr, param.paramName, param.paramName);
             methodBuilder.addCode(idGenerator);
-            methodBuilder.addCode(enumString);
             methodBuilder.addStatement("batchValues.add(new Object[]{$L})", CodeBlock.join(values.args(), ", "));
             methodBuilder.endControlFlow();
 
@@ -190,7 +188,6 @@ public class RepositoryEmitter {
                 methodBuilder.addStatement("return $T.stream(result).sum()", Arrays.class);
         } else {
             methodBuilder.addCode(idGenerator);
-            methodBuilder.addCode(enumString);
             String sql = "INSERT INTO " + quoteTable(tableInfo) + values.query();
 
             if (returnInt && !methodInfo.returns.table())
@@ -365,8 +362,6 @@ public class RepositoryEmitter {
                 updateColumns.add(param);
             }
         }
-
-        methodBuilder.addCode(JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodInfo.params));
 
         JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.update(whereColumns, updateColumns, methodInfo);
 

@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.SqlParameterValue;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.type.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -85,9 +86,6 @@ public class JdbcCodeGenerator {
             if (clause == Clause.INSERT)
                 queryBuilder.append("(");
 
-            // Numbers the String[] copies checkAndConvertEnumToStringArray declares -- counted per call here, per method there
-            int tempVarCount = 0;
-
             for (MethodParamInfo param : params) {
                 if (param.columns.isEmpty()) continue;
                 if (++conditionCount != 0) queryBuilder.append(clause.separator);
@@ -117,13 +115,7 @@ public class JdbcCodeGenerator {
                         }
                     }
 
-                    String argName = argName(param, column);
-                    // An enum array binds as its String[] copy
-                    if (column.isArray && column.isEnum) {
-                        argName = "var" + tempVarCount;
-                        tempVarCount++;
-                    }
-                    appendArgs(args, argName, column.isArray, column.isEnum, column.nullable);
+                    appendArgs(args, argName(param, column), column.isArray, column.isList, column.isEnum, column.nullable);
                 }
                 if (anyColumn)
                     queryBuilder.append(")");
@@ -161,20 +153,29 @@ public class JdbcCodeGenerator {
                     queryBuilder.append(enumBindCast(methodParam.columns.getFirst(), methodParam.isArray));
 
                 boolean isArray = methodParam != null && methodParam.isArray;
+                boolean isList = isArray && !(methodParam.parameter.asType() instanceof ArrayType);
                 boolean isEnum = methodParam != null && methodParam.isEnum;
 
-                appendArgs(args, sqlParam.paramName(), isArray, isEnum, true);
+                appendArgs(args, sqlParam.paramName(), isArray, isList, isEnum, true);
             }
         }
         return new QueryAndArgs(queryBuilder, args);
     }
 
-    private static void appendArgs(List<CodeBlock> args, String argName, boolean isArray, boolean isEnum, boolean nullable) {
+    // An enum array converts to String[] in place: the driver binds no enum, and a per-method temp variable needs its declaration and its use kept in step
+    private static void appendArgs(List<CodeBlock> args, String argName, boolean isArray, boolean isList, boolean isEnum, boolean nullable) {
         if (isArray) {
+            CodeBlock value;
+            if (!isEnum)
+                value = CodeBlock.of("$L", argName);
+            else if (isList)
+                value = CodeBlock.of("$L.stream().map($T::name).toArray($T[]::new)", argName, Enum.class, String.class);
+            else
+                value = CodeBlock.of("$T.stream($L).map($T::name).toArray($T[]::new)", Arrays.class, argName, Enum.class, String.class);
             args.add(CodeBlock.of("new $T($T.ARRAY, $L)",
                     SqlParameterValue.class,
                     java.sql.Types.class,
-                    argName
+                    value
             ));
         } else if (isEnum) {
             if (nullable)
@@ -310,34 +311,6 @@ public class JdbcCodeGenerator {
             String generator = tableData.getDependencyFieldName(info.idGenerator.toString());
             codeBlock.addStatement("long id$L = $L.nextId()", i, generator);
             infos.add(i, new MethodParamInfo(null, Collections.singletonList(info), "long", "id" + i, false, null, false));
-        }
-        return codeBlock.build();
-    }
-
-    public static CodeBlock checkAndConvertEnumToStringArray(List<MethodParamInfo> infos) {
-        CodeBlock.Builder codeBlock = CodeBlock.builder();
-        int tempVarCount = 0;
-        for (MethodParamInfo param : infos) {
-            for (ColumnInfo column : param.columns) {
-                if (param.dataClass && column.idGenerator != null)
-                    continue;
-
-                String argName = argName(param, column);
-                if (column.isArray && column.isEnum) {
-                    if (column.isList) {
-                        codeBlock.addStatement("$T[] var$L = new $T[$L.size()]", String.class, tempVarCount, String.class, argName);
-                        codeBlock.beginControlFlow("for (int i = 0; i < $L.size(); i++)", argName);
-                        codeBlock.addStatement("var$L[i] = $L.get(i).name()", tempVarCount, argName);
-                        codeBlock.endControlFlow();
-                    } else {
-                        codeBlock.addStatement("$T[] var$L = new $T[$L.length]", String.class, tempVarCount, String.class, argName);
-                        codeBlock.beginControlFlow("for (int i = 0; i < $L.length; i++)", argName);
-                        codeBlock.addStatement("var$L[i] = $L[i].name()", tempVarCount, argName);
-                        codeBlock.endControlFlow();
-                    }
-                    tempVarCount++;
-                }
-            }
         }
         return codeBlock.build();
     }
