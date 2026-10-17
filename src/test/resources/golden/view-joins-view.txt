@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR ShopCard.java: Field 'name' not found in table 'fx.OwnerCard'. A table is only referenced once some field joins it with '@JoinColumn'
