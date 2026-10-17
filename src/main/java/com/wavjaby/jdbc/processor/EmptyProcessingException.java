@@ -1,16 +1,8 @@
 package com.wavjaby.jdbc.processor;
 
-import javax.annotation.processing.Messager;
-import javax.lang.model.element.AnnotationMirror;
-import javax.lang.model.element.AnnotationValue;
-import javax.lang.model.element.Element;
-import javax.tools.Diagnostic;
-
-public class EmptyProcessingException extends ProcessingException {
+/** Thrown after the diagnostic is already printed: it carries no message, it only unwinds to where processing of the element stops. */
+public class EmptyProcessingException extends Exception {
     public EmptyProcessingException() {
-        super(null, null);
-    }
-
-    public void printTo(Messager console) {
+        super(null, null, false, false);
     }
 }
