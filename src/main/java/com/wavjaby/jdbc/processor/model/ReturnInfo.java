@@ -1,5 +1,6 @@
 package com.wavjaby.jdbc.processor.model;
 
+import com.wavjaby.jdbc.annotation.FieldName;
 import com.wavjaby.jdbc.annotation.Select;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import org.jspecify.annotations.NonNull;
@@ -145,16 +146,35 @@ public record ReturnInfo(
         throw new EmptyProcessingException();
     }
 
-    // Every component must be a table field of the same type; the row mapper fills constructor parameters by position, so SELECT follows component order
+    /**
+     * Every component must be a table field of the same type -- its own name, or the one its @FieldName gives. No SQL alias is needed for a rename:
+     * the row mapper fills constructor parameters by position, so SELECT only has to follow component order.
+     */
     private static Projection initProjection(TypeElement record, TableData tableData, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
         List<? extends RecordComponentElement> components = record.getRecordComponents();
         List<ColumnInfo> columns = new ArrayList<>(components.size());
         boolean error = false;
         for (RecordComponentElement component : components) {
             String name = component.getSimpleName().toString();
-            ColumnInfo column = tableData.tableFields.get(name);
+            String fieldName = name;
+            // @FieldName targets FIELD, so on a component javac hands it to the record's private field, not to the component element
+            VariableElement field = recordField(record, name);
+            AnnotationMirror alias = field == null ? null : getAnnotationMirror(field, FieldName.class);
+            if (alias != null) {
+                if (getAnnotationValueClass(alias, "referencedClass") != null) {
+                    console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "': @FieldName(referencedClass) picks a joined table in a view; " +
+                            "a projection reads only '" + tableData.tableInfo.classPath + "'", method);
+                    error = true;
+                    continue;
+                }
+                String value = field.getAnnotation(FieldName.class).value().trim();
+                if (!value.isEmpty())
+                    fieldName = value;
+            }
+            ColumnInfo column = tableData.tableFields.get(fieldName);
             if (column == null) {
-                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "' is not a field of table '" + tableData.tableInfo.classPath + "'", method);
+                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "'" + (fieldName.equals(name) ? "" : " (@FieldName '" + fieldName + "')") +
+                        " is not a field of table '" + tableData.tableInfo.classPath + "'", method);
                 error = true;
                 continue;
             }
@@ -194,6 +214,13 @@ public record ReturnInfo(
         console.printMessage(ERROR, "Return type '" + rowType + "' does not match field '" + returnColumn.column().field.getSimpleName() +
                 "' of type '" + returnColumn.column().field.asType() + "'", method, mirror, getAnnotationValue(mirror, "field"));
         throw new EmptyProcessingException();
+    }
+
+    private static VariableElement recordField(TypeElement record, String name) {
+        for (Element member : record.getEnclosedElements())
+            if (member.getKind() == ElementKind.FIELD && member.getSimpleName().contentEquals(name))
+                return (VariableElement) member;
+        return null;
     }
 
     private static TypeMirror boxed(Types types, TypeMirror type) {

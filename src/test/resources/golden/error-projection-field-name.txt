@@ -1,0 +1,3 @@
+=== diagnostics (2) ===
+ERROR PersonRepository.java: Projection 'fx.Misnamed' component 'years' (@FieldName 'ageInYears') is not a field of table 'fx.Person'
+ERROR PersonRepository.java: Projection 'fx.Pinned' component 'years': @FieldName(referencedClass) picks a joined table in a view; a projection reads only 'fx.Person'
