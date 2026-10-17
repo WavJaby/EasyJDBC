@@ -136,7 +136,7 @@ public class RepositoryEmitter {
         return fields;
     }
 
-    private void generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder, Map<String, String> projectionMappers) throws EmptyProcessingException {
+    private void generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder, Map<String, String> projectionMappers) {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
             switch (method.operation) {
                 case INSERT -> generateRepositoryInsertMethod(method, tableData, typeBuilder);
@@ -331,24 +331,19 @@ public class RepositoryEmitter {
         typeBuilder.addMethod(methodBuilder.build());
     }
 
-    private void generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) throws EmptyProcessingException {
+    private void generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
         List<MethodParamInfo> whereColumns = new ArrayList<>();
         List<MethodParamInfo> updateColumns = new ArrayList<>();
+        // A plain parameter maps to one column unless @Where lists several, and then it is a WHERE parameter
         for (MethodParamInfo param : methodInfo.params) {
-            if (param.columns == null) continue;
             if (param.where)
                 whereColumns.add(param);
-            else {
-                if (!param.dataClass && param.columns.size() > 1) {
-                    console.printMessage(ERROR, "Multiple column for value", param.parameter);
-                    throw new EmptyProcessingException();
-                }
+            else
                 updateColumns.add(param);
-            }
         }
 
         JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.update(whereColumns, updateColumns, methodInfo);

@@ -96,13 +96,12 @@ public class MethodParamParser {
         // List all fields in class
         boolean error = false;
         for (VariableElement element : fields.values()) {
-            String fieldType = element.asType().toString();
             String fieldName = element.getSimpleName().toString();
 
             ColumnInfo column = tableData.tableFields.get(fieldName);
 
             try {
-                checkFieldTypeAndName(fieldType, fieldName, parameter, paramName, classType, column, console);
+                requireColumn(fieldName, parameter, paramName, classType, column);
             } catch (EmptyProcessingException e) {
                 error = true;
                 continue;
@@ -136,13 +135,11 @@ public class MethodParamParser {
                 continue;
 
             try {
-                checkFieldTypeAndName(parameterType.toString(), fieldName, parameter, paramName, null, column, console);
+                requireColumn(fieldName, parameter, paramName, null, column);
             } catch (EmptyProcessingException e) {
                 error = true;
                 continue;
             }
-//            if (!customSqlParam)
-//                customSqlParam = customSql.isParamExist(fieldName);
 
             // Check ignore case is used on string type only
             if (where != null && where.ignoreCase() && !parameterType.toString().equals(String.class.getName())) {
@@ -160,26 +157,12 @@ public class MethodParamParser {
         params.add(new MethodParamInfo(parameter, columns, getTypeName(parameterType), paramName, false, where, customSqlParam));
     }
 
-    private void checkFieldTypeAndName(String parameterType, String fieldName, Element parameter, String paramName, TypeElement classType, ColumnInfo column, Messager console) throws EmptyProcessingException {
-//        if (classType != null)
-//            fieldName = classType.asType() + "::" + fieldName;
-
-        // field for column exist and type is same
-        if (column != null && column.field.getSimpleName().toString().equals(fieldName)) {
+    // Existence only: tableFields is keyed by field name, so a found column always has this name, and parameter types are not compared
+    private void requireColumn(String fieldName, Element parameter, String paramName, TypeElement classType, ColumnInfo column) throws EmptyProcessingException {
+        if (column != null)
             return;
-        }
-
         String inClass = classType != null ? "(in class: '" + classType.asType().toString() + "', parameter: '" + paramName + "')" : "";
-        // Column not exist
-        if (column == null) {
-            console.printMessage(ERROR, "Field '" + fieldName + "'" + inClass + " does not exist in table '" + tableData.tableInfo.classPath + "'", parameter);
-        }
-        // Type mismatch
-        else {
-            console.printMessage(ERROR,
-                    "Parameter type '" + parameterType + "'" + inClass + " does not match field type '" + column.field.asType().toString() +
-                            "' for column '" + column.columnName + "' in table '" + tableData.tableInfo.classPath + "'", parameter);
-        }
+        console.printMessage(ERROR, "Field '" + fieldName + "'" + inClass + " does not exist in table '" + tableData.tableInfo.classPath + "'", parameter);
         throw new EmptyProcessingException();
     }
 
