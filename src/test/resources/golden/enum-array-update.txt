@@ -1,0 +1,95 @@
+=== diagnostics (1) ===
+ERROR JournalRepositoryImpl.java: cannot find symbol
+  symbol:   variable var0
+  location: class fx.JournalRepositoryImpl
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        DO
+        $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'fx_mood') THEN
+                CREATE TYPE fx_mood AS ENUM (
+                'CALM', 'ANGRY'
+                );
+            END IF;
+        END
+        $$;""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS journal(
+            id BIGINT NOT NULL,
+            moods fx_mood ARRAY,
+            CONSTRAINT journal_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/JournalRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.lang.String;
+import java.sql.Types;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class JournalRepositoryImpl implements JournalRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Journal> tableMapper;
+
+  public JournalRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Journal.class, 2);
+  }
+
+  @Override
+  public void replaceMoods(Mood[] oldMoods, Mood[] newMoods) {
+    String[] var0 = new String[oldMoods.length];
+    for (int i = 0; i < oldMoods.length; i++) {
+      var0[i] = oldMoods[i].name();
+    }
+    String[] var1 = new String[newMoods.length];
+    for (int i = 0; i < newMoods.length; i++) {
+      var1[i] = newMoods[i].name();
+    }
+    jdbc.update("UPDATE journal SET moods=?::fx_mood[] WHERE moods IS NOT DISTINCT FROM ?::fx_mood[]", new SqlParameterValue(Types.ARRAY, var0), new SqlParameterValue(Types.ARRAY, var0));
+  }
+
+  @Override
+  public List<Journal> getByMoods(Mood[] moods) {
+    return jdbc.query("SELECT id,moods FROM journal WHERE moods IS NOT DISTINCT FROM ?::fx_mood[]", tableMapper, new SqlParameterValue(Types.ARRAY, var0));
+  }
+}
