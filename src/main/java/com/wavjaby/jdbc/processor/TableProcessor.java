@@ -319,118 +319,25 @@ public class TableProcessor extends AbstractProcessor {
 
 
     private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder) {
-        TableInfo tableInfo = tableData.tableInfo;
         for (MethodInfo method : tableData.interfaceMethodInfo) {
-
-            // Explicit column SQL selection takes highest priority
-            if (method.returns.column().columnSqlParams() != null) {
-                if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
-                    return true;
-                continue;
-            }
-
-            if (method.batchInsert) {
-                if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
-                    return true;
-                continue;
-            }
-
-            // Delete methods: only applicable for boolean/int/void returns.
-            if (method.delete) {
-                TypeKind kind = method.returnTypeMirror.getKind();
-                if (kind == TypeKind.BOOLEAN || kind == TypeKind.INT || kind == TypeKind.VOID) {
-                    if (generateRepositoryDeleteMethod(method, tableData, typeBuilder))
-                        return true;
-                    continue;
-                }
-                console.printMessage(ERROR, "Unrecognized return type for delete method: " + method.method, method.method);
+            boolean error = switch (method.operation) {
+                case INSERT -> generateRepositoryInsertMethod(method, tableData, typeBuilder);
+                case UPDATE -> generateRepositoryUpdateMethod(method, tableData, typeBuilder, false);
+                case UPDATE_CHECKED -> generateRepositoryUpdateMethod(method, tableData, typeBuilder, true);
+                case DELETE -> generateRepositoryDeleteMethod(method, tableData, typeBuilder);
+                case COUNT -> generateRepositoryCountMethod(method, tableData, typeBuilder);
+                case EXISTS -> generateRepositoryCheckMethod(method, tableData, typeBuilder);
+                case SELECT_ROWS -> generateRepositorySearchMethod(method, tableData, typeBuilder);
+                case SELECT_COLUMN -> generateRepositorySearchColumnMethod(method, tableData, typeBuilder);
+            };
+            if (error)
                 return true;
-            }
-
-            // Primitive return types
-            if (method.returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
-                TypeKind kind = primitiveReturnType.getKind();
-                if (kind == TypeKind.BOOLEAN) {
-                    if (method.modifyRow) {
-                        // Update and check success
-                        if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, true))
-                            return true;
-                        continue;
-                    } else {
-                        // Check existence
-                        if (generateRepositoryCheckMethod(method, tableData, typeBuilder))
-                            return true;
-                        continue;
-                    }
-                } else if (kind == TypeKind.INT) {
-                    if (method.count) {
-                        if (generateRepositoryCountMethod(method, tableData, typeBuilder))
-                            return true;
-                        continue;
-                    }
-                }
-
-                console.printMessage(ERROR, "Unrecognized return type for " + method.returns.typeName() + " method: " + method.method, method.method);
-                return true;
-            }
-
-            // Void return type
-            if (method.returnTypeMirror instanceof NoType) {
-                if (method.modifyRow) {
-                    if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, false))
-                        return true;
-                    continue;
-                }
-                else if (method.insertMethod) {
-                    if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
-                        return true;
-                    continue;
-                }
-
-                console.printMessage(ERROR, "Only insert, update method allow return void, method: " + method.method, method.method);
-                return true;
-            }
-
-            // Declared and other return types
-            if (method.returns.table()) {
-                // Update function
-                if (method.modifyRow) {
-                    if (generateRepositoryUpdateMethod(method, tableData, typeBuilder, false))
-                        return true;
-                    continue;
-                }
-                // Insert function
-                else if (method.insertMethod) {
-                    if (generateRepositoryInsertMethod(method, tableData, typeBuilder))
-                        return true;
-                    continue;
-                }
-                // Query function
-                else if (generateRepositorySearchMethod(method, tableData, typeBuilder))
-                    return true;
-                continue;
-            }
-
-            // Return a single column
-            if (method.returns.column().column() != null) {
-                if (generateRepositorySearchColumnMethod(method, tableData, typeBuilder))
-                    return true;
-                continue;
-            }
-
-            console.printMessage(ERROR, "Unrecognized repository method configuration: " + method.method, method.method);
-            return true;
         }
         return false;
     }
 
 
     private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
-        if (methodInfo.returns.list()) {
-            console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for insert method", methodInfo.method);
-            return true;
-        }
-
         boolean returnInt = methodInfo.returnTypeMirror.getKind() == TypeKind.INT;
         TableInfo tableInfo = tableData.tableInfo;
 
@@ -599,11 +506,6 @@ public class TableProcessor extends AbstractProcessor {
     }
 
     private boolean generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) {
-        if (methodInfo.returns.list()) {
-            console.printMessage(ERROR, "Unsupported method return type: " + methodInfo.returnTypeMirror + ", for update method", methodInfo.method);
-            return true;
-        }
-
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);

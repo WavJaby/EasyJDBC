@@ -53,6 +53,13 @@ public class MethodInfo {
     public final boolean batchInsert;
     public final boolean insertMethod;
 
+    /** What the generated method does. Decided once here, so a method shape no operation accepts is a parse error and emit only switches. */
+    public enum Operation {
+        INSERT, UPDATE, UPDATE_CHECKED, DELETE, COUNT, EXISTS, SELECT_ROWS, SELECT_COLUMN
+    }
+
+    public final Operation operation;
+
     public MethodInfo(ExecutableElement method, TableData tableData, Messager console) throws EmptyProcessingException {
         this.method = method;
         this.tableData = tableData;
@@ -86,6 +93,60 @@ public class MethodInfo {
         this.notFound = initNotFoundException(method);
 
         this.returns = initReturnInfo(select, customSql, returnTypeMirror, tableData, params, method, console);
+
+        this.operation = initOperation(console);
+    }
+
+    // First match wins, in this order: column SQL, batch insert, delete, primitive return, void return, row return, single column
+    private Operation initOperation(Messager console) throws EmptyProcessingException {
+        if (returns.column().columnSqlParams() != null)
+            return Operation.SELECT_COLUMN;
+
+        // Batch insert is validated to return int, so never a list
+        if (batchInsert)
+            return Operation.INSERT;
+
+        if (delete) {
+            TypeKind kind = returnTypeMirror.getKind();
+            if (kind == TypeKind.BOOLEAN || kind == TypeKind.INT || kind == TypeKind.VOID)
+                return Operation.DELETE;
+            console.printMessage(ERROR, "Unrecognized return type for delete method: " + method, method);
+            throw new EmptyProcessingException();
+        }
+
+        if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
+            TypeKind kind = primitiveReturnType.getKind();
+            if (kind == TypeKind.BOOLEAN)
+                return modifyRow ? Operation.UPDATE_CHECKED : Operation.EXISTS;
+            if (kind == TypeKind.INT && count)
+                return Operation.COUNT;
+            console.printMessage(ERROR, "Unrecognized return type for " + returns.typeName() + " method: " + method, method);
+            throw new EmptyProcessingException();
+        }
+
+        if (returnTypeMirror instanceof NoType) {
+            if (modifyRow)
+                return Operation.UPDATE;
+            if (insertMethod)
+                return Operation.INSERT;
+            console.printMessage(ERROR, "Only insert, update method allow return void, method: " + method, method);
+            throw new EmptyProcessingException();
+        }
+
+        if (returns.table()) {
+            if (modifyRow || insertMethod) {
+                // Both hand back the one row they wrote
+                if (returns.list()) {
+                    console.printMessage(ERROR, "Unsupported method return type: " + returnTypeMirror + ", for " + (modifyRow ? "update" : "insert") + " method", method);
+                    throw new EmptyProcessingException();
+                }
+                return modifyRow ? Operation.UPDATE : Operation.INSERT;
+            }
+            return Operation.SELECT_ROWS;
+        }
+
+        // initReturnInfo only lets any other shape through with a @Select field or column SQL, and column SQL matched first
+        return Operation.SELECT_COLUMN;
     }
 
     public record CustomSqlRaw(List<SqlParam> column, List<SqlParam> query) {
