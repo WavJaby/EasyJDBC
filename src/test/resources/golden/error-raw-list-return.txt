@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR ItemRepository.java: Raw List return: name the row type, e.g. List<Item>

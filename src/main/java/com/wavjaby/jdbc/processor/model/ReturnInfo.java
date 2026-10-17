@@ -84,6 +84,10 @@ public record ReturnInfo(
 
         if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
             boolean list = declaredReturnType.asElement().toString().equals(List.class.getName());
+            if (list && declaredReturnType.getTypeArguments().isEmpty()) {
+                console.printMessage(ERROR, "Raw List return: name the row type, e.g. List<" + tableData.tableInfo.className + ">", method);
+                throw new EmptyProcessingException();
+            }
             TypeMirror rowType = list ? declaredReturnType.getTypeArguments().get(0) : returnTypeMirror;
             TypeElement rowElement = rowType instanceof DeclaredType declaredRowType ? (TypeElement) declaredRowType.asElement() : null;
 
