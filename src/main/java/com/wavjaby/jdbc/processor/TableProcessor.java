@@ -101,7 +101,16 @@ public class TableProcessor extends AbstractProcessor {
             System.out.println("RepositoryTemplate process done " + tableDataMap.size());
             return true;
         } catch (Exception e) {
+            // An ERROR fails the build; returning false alone left the build green with nothing generated.
+            // Full trace -> stderr; the diagnostic names the processor method that failed (the top frame is usually JDK code), no line number so it stays stable across edits
             e.printStackTrace();
+            String processorPackage = TableProcessor.class.getPackageName();
+            String where = Arrays.stream(e.getStackTrace())
+                    .filter(frame -> frame.getClassName().startsWith(processorPackage))
+                    .findFirst()
+                    .map(frame -> " in " + frame.getClassName() + "." + frame.getMethodName())
+                    .orElse("");
+            console.printMessage(ERROR, "EasyJDBC processor internal error, a processor bug rather than a problem in your code: " + e + where);
             return false;
         }
     }
