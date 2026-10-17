@@ -68,8 +68,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    // ProcessorUtil.copyUtilityClasses reads com/wavjaby/jdbc/util/*.java off its own classloader (the jar ships those
-    // sources). javac's processor loader delegates to the app loader first, so the directory has to be here too.
+    // UtilityClassEmitter reads com/wavjaby/jdbc/util/*.java off its own classloader (the jar ships those sources); javac's processor loader delegates to the app loader first, so the directory has to be here too.
     classpath += files("src/main/java")
     // The golden tests run javac in-process. The fixture compilation needs the same classpath the tests run on, and
     // the processor copies com/wavjaby/jdbc/util/*.java as *resources*, which only exist in the source tree.

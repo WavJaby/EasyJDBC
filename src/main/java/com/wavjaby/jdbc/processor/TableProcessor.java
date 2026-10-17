@@ -4,11 +4,11 @@ import com.google.auto.service.AutoService;
 import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.processor.emit.InitEmitter;
 import com.wavjaby.jdbc.processor.emit.RepositoryEmitter;
+import com.wavjaby.jdbc.processor.emit.UtilityClassEmitter;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
 import com.wavjaby.jdbc.processor.resolve.ResolvedTable;
 import com.wavjaby.jdbc.processor.resolve.Resolver;
-import com.wavjaby.jdbc.processor.util.ProcessorUtil;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -86,7 +86,7 @@ public class TableProcessor extends AbstractProcessor {
 
             new InitEmitter(console, filer).emit(tableDataMap, resolvedTables);
 
-            ProcessorUtil.copyUtilityClasses(processingEnv, console);
+            UtilityClassEmitter.emit(processingEnv, console);
 
             System.out.println("RepositoryTemplate process done " + tableDataMap.size());
             return true;

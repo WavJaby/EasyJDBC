@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.golden;
 
 import com.wavjaby.jdbc.processor.TableProcessor;
+import com.wavjaby.jdbc.processor.emit.UtilityClassEmitter;
 
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -26,8 +27,7 @@ import java.util.stream.Stream;
 final class ProcessorRunner {
 
     // Verbatim copies of resources, identical in every scenario -- snapshotting them would bury the generated code.
-    private static final Set<String> COPIED_UTILITIES = Set.of(
-            "IdentifierGenerator", "Snowflake", "FastRowMapper", "StringConverter", "FastResultSetExtractor");
+    private static final Set<String> COPIED_UTILITIES = Set.copyOf(UtilityClassEmitter.CLASSES);
 
     record Result(List<String> diagnostics, List<GeneratedFile> generated) {
     }
