@@ -3,6 +3,7 @@ package com.wavjaby.jdbc.golden;
 import com.wavjaby.jdbc.processor.TableProcessor;
 import com.wavjaby.jdbc.processor.emit.UtilityClassEmitter;
 
+import javax.annotation.processing.Processor;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -36,6 +37,11 @@ final class ProcessorRunner {
     }
 
     static Result run(String scenario, List<Path> sources) throws IOException {
+        return run(scenario, sources, null);
+    }
+
+    /** {@code processor} replaces the one javac would discover by name -- a fault-injecting TableProcessor, for paths no source input reaches. */
+    static Result run(String scenario, List<Path> sources, Processor processor) throws IOException {
         Path work = Path.of(System.getProperty("golden.workDir")).resolve(scenario);
         Path gen = work.resolve("generated");
         Path classes = work.resolve("classes");
@@ -57,7 +63,10 @@ final class ProcessorRunner {
 
         try (StandardJavaFileManager files = compiler.getStandardFileManager(collected, Locale.ROOT, StandardCharsets.UTF_8)) {
             Iterable<? extends JavaFileObject> units = files.getJavaFileObjectsFromPaths(sources);
-            compiler.getTask(null, files, collected, options, null, units).call();
+            JavaCompiler.CompilationTask task = compiler.getTask(null, files, collected, options, null, units);
+            if (processor != null)
+                task.setProcessors(List.of(processor));
+            task.call();
         }
 
         return new Result(diagnostics(collected), generatedFiles(gen));
