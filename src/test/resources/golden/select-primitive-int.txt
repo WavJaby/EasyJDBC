@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR CounterRepository.java: Unrecognized return type for int method: getHitsById(long)
