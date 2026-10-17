@@ -3,7 +3,6 @@ package com.wavjaby.jdbc.processor.model;
 import com.wavjaby.jdbc.annotation.*;
 import com.wavjaby.jdbc.annotation.conf.Direction;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
-import com.wavjaby.jdbc.processor.TableProcessor;
 import com.wavjaby.jdbc.processor.util.MethodParamParser;
 import org.jspecify.annotations.NonNull;
 
@@ -62,7 +61,7 @@ public class MethodInfo {
 
     public final Operation operation;
 
-    public MethodInfo(ExecutableElement method, TableData tableData, Messager console) throws EmptyProcessingException {
+    public MethodInfo(ExecutableElement method, TableData tableData, Types types, Messager console) throws EmptyProcessingException {
         this.method = method;
         this.tableData = tableData;
         this.methodName = method.getSimpleName().toString();
@@ -94,7 +93,7 @@ public class MethodInfo {
 
         this.notFound = initNotFoundException(method);
 
-        this.returns = initReturnInfo(select, customSql, returnTypeMirror, tableData, params, method, console);
+        this.returns = initReturnInfo(select, customSql, returnTypeMirror, tableData, params, method, types, console);
 
         this.operation = initOperation(console);
     }
@@ -340,7 +339,7 @@ public class MethodInfo {
      * A declared return type is, per row (the List element when it is a List): the table class, a projection record, or a single-column type that names its column with @Select.
      * A supertype of the table is refused: the generated List of the table class is not assignable to a List of the supertype.
      */
-    private static ReturnInfo initReturnInfo(Select select, CustomSqlRaw customSql, TypeMirror returnTypeMirror, TableData tableData, List<MethodParamInfo> params, ExecutableElement method, Messager console) throws EmptyProcessingException {
+    private static ReturnInfo initReturnInfo(Select select, CustomSqlRaw customSql, TypeMirror returnTypeMirror, TableData tableData, List<MethodParamInfo> params, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
         ReturnColumn returnColumn = initReturnColumn(select, customSql.column, tableData, params, method, console);
 
         if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
@@ -367,7 +366,7 @@ public class MethodInfo {
                     printError(console, method, Select.class, "Projection record '" + rowElement + "' selects the columns its components name: remove @Select");
                     throw new EmptyProcessingException();
                 }
-                Projection projection = initProjection(rowElement, tableData, method, console);
+                Projection projection = initProjection(rowElement, tableData, method, types, console);
                 return new ReturnInfo(returnColumn, false, list, getTypeName(rowType), projection);
             }
 
@@ -376,7 +375,7 @@ public class MethodInfo {
                         "to return rows, return the table class or a projection record", method);
                 throw new EmptyProcessingException();
             }
-            checkColumnReturnType(returnColumn, rowType, returnTypeMirror, method, console);
+            checkColumnReturnType(returnColumn, rowType, returnTypeMirror, method, types, console);
             return new ReturnInfo(returnColumn, false, list, getTypeName(rowType));
         } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
             if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
@@ -393,7 +392,7 @@ public class MethodInfo {
 
             // Only allow when return field is used
             if (!returnColumn.isNull()) {
-                checkColumnReturnType(returnColumn, returnTypeMirror, returnTypeMirror, method, console);
+                checkColumnReturnType(returnColumn, returnTypeMirror, returnTypeMirror, method, types, console);
                 return new ReturnInfo(returnColumn, false, false, getTypeName(returnTypeMirror));
             } else {
                 console.printMessage(ERROR, "Return with array type must use returnField, to query multiple objects, use List<>", method);
@@ -410,8 +409,7 @@ public class MethodInfo {
     }
 
     // Every component must be a table field of the same type; the row mapper fills constructor parameters by position, so SELECT follows component order
-    private static Projection initProjection(TypeElement record, TableData tableData, ExecutableElement method, Messager console) throws EmptyProcessingException {
-        Types types = TableProcessor.getTypeUtils();
+    private static Projection initProjection(TypeElement record, TableData tableData, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
         List<? extends RecordComponentElement> components = record.getRecordComponents();
         List<ColumnInfo> columns = new ArrayList<>(components.size());
         boolean error = false;
@@ -449,10 +447,9 @@ public class MethodInfo {
     }
 
     // A @Select(field) column reads as the field's type. The List form is ambiguous on purpose: per row (List<String> of a String field) or the field itself (List<String> of a List<String> field)
-    private static void checkColumnReturnType(ReturnColumn returnColumn, TypeMirror rowType, TypeMirror returnType, ExecutableElement method, Messager console) throws EmptyProcessingException {
+    private static void checkColumnReturnType(ReturnColumn returnColumn, TypeMirror rowType, TypeMirror returnType, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
         if (returnColumn.column() == null)
             return; // columnSql: its type is whatever the SQL computes
-        Types types = TableProcessor.getTypeUtils();
         TypeMirror fieldType = boxed(types, returnColumn.column().field.asType());
         if (types.isSameType(boxed(types, rowType), fieldType) || types.isSameType(boxed(types, returnType), fieldType))
             return;

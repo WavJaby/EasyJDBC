@@ -1,7 +1,5 @@
 package com.wavjaby.jdbc.processor.util;
 
-import com.wavjaby.jdbc.processor.TableProcessor;
-
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
@@ -55,13 +53,15 @@ public class AnnotationHelper {
         return null;
     }
 
+    // The value as written, else the annotation's declared default -- what Elements.getElementValuesWithDefaults gives, without a processing environment
     public static AnnotationValue getAnnotationValue(AnnotationMirror annotationMirror, String key) {
         if (annotationMirror == null) return null;
-        Map<? extends ExecutableElement, ? extends AnnotationValue> values =
-                TableProcessor.getElementUtils().getElementValuesWithDefaults(annotationMirror);
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : values.entrySet()) {
-            if (entry.getKey().getSimpleName().toString().equals(key))
-                return entry.getValue();
+        Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> written = getAnnotationEntry(annotationMirror, key);
+        if (written != null)
+            return written.getValue();
+        for (Element member : annotationMirror.getAnnotationType().asElement().getEnclosedElements()) {
+            if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(key))
+                return ((ExecutableElement) member).getDefaultValue();
         }
         return null;
     }

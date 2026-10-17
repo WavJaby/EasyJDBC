@@ -34,8 +34,8 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 @SuppressWarnings("unused")
 public class TableProcessor extends AbstractProcessor {
     private Messager console;
-    private static Elements elementUtils;
-    private static Types typeUtils;
+    private Elements elementUtils;
+    private Types typeUtils;
     private Filer filer;
 
     @SuppressWarnings("unused")
@@ -45,18 +45,10 @@ public class TableProcessor extends AbstractProcessor {
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
-        elementUtils = processingEnv.getElementUtils();
-        typeUtils = processingEnv.getTypeUtils();
+        this.elementUtils = processingEnv.getElementUtils();
+        this.typeUtils = processingEnv.getTypeUtils();
         this.console = processingEnv.getMessager();
         this.filer = processingEnv.getFiler();
-    }
-
-    public static Elements getElementUtils() {
-        return elementUtils;
-    }
-
-    public static Types getTypeUtils() {
-        return typeUtils;
     }
 
     @Override
@@ -137,7 +129,7 @@ public class TableProcessor extends AbstractProcessor {
             }
         }
 
-        if (tableData.parseRepoMethods(tableData, console))
+        if (tableData.parseRepoMethods(tableData, typeUtils, console))
             return null;
 
         return tableData;

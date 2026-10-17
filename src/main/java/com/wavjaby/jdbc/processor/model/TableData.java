@@ -9,6 +9,7 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.util.Types;
 import java.util.*;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
@@ -104,7 +105,7 @@ public class TableData {
         return false;
     }
 
-    public boolean parseRepoMethods(TableData tableData, Messager console) {
+    public boolean parseRepoMethods(TableData tableData, Types types, Messager console) {
         Map<String, ExecutableElement> methods = new LinkedHashMap<>();
         extractClassMethods(tableInfo.repoIntClassElement, methods);
 
@@ -113,7 +114,7 @@ public class TableData {
         for (ExecutableElement e : methods.values()) {
             MethodInfo methodInfo;
             try {
-                methodInfo = new MethodInfo(e, tableData, console);
+                methodInfo = new MethodInfo(e, tableData, types, console);
             } catch (EmptyProcessingException ex) {
                 error = true;
                 continue;
