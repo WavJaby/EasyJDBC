@@ -170,7 +170,7 @@ public class RepositoryEmitter {
         CodeBlock idGenerator = JdbcCodeGenerator.addIdGenerator(tableData, infos);
         CodeBlock enumString = JdbcCodeGenerator.checkAndConvertEnumToStringArray(infos);
 
-        JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.getQueryAndArgs(infos, methodInfo, true, false, null, ",", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs values = JdbcCodeGenerator.insert(infos, methodInfo);
 
         if (methodInfo.batchInsert) {
             MethodParamInfo param = methodInfo.params.get(0);
@@ -203,8 +203,7 @@ public class RepositoryEmitter {
             }
 
             if (methodInfo.returns.table()) {
-                JdbcCodeGenerator.QueryAndArgs returnValues = JdbcCodeGenerator.getQueryAndArgs(infos, null, false, true, null, ",", true, tableData);
-                methodBuilder.addStatement("return new $T($L)", ClassName.bestGuess(tableInfo.className), CodeBlock.join(returnValues.args(), ", "));
+                methodBuilder.addStatement("return new $T($L)", ClassName.bestGuess(tableInfo.className), CodeBlock.join(JdbcCodeGenerator.rowArgs(infos), ", "));
             }
         }
 
@@ -218,7 +217,7 @@ public class RepositoryEmitter {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
 
         String sql = "SELECT COUNT(*) FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
@@ -233,7 +232,7 @@ public class RepositoryEmitter {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
 
         String sql = "SELECT COUNT(*) FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
@@ -272,7 +271,7 @@ public class RepositoryEmitter {
             columnQuery.append(quoteColumn(returnColumn.column().columnName));
         }
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
         List<CodeBlock> sqlArgs;
         if (!columnArgs.isEmpty()) {
             sqlArgs = new ArrayList<>(columnArgs);
@@ -292,7 +291,7 @@ public class RepositoryEmitter {
     private boolean generateRepositoryProjectionMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, String mapperField) {
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
 
         StringBuilder columnQuery = new StringBuilder();
         for (ColumnInfo column : methodInfo.returns.projection().columns()) {
@@ -313,7 +312,7 @@ public class RepositoryEmitter {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
 
         StringBuilder columnQuery = new StringBuilder();
         boolean first = true;
@@ -337,7 +336,7 @@ public class RepositoryEmitter {
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
-        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
 
         String sql = "DELETE FROM " + quoteTable(tableInfo) + queryWithArgs.query();
 
@@ -369,7 +368,7 @@ public class RepositoryEmitter {
 
         methodBuilder.addCode(JdbcCodeGenerator.checkAndConvertEnumToStringArray(methodInfo.params));
 
-        JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.updateQueryAndArgs(whereColumns, updateColumns, methodInfo, tableData);
+        JdbcCodeGenerator.QueryAndArgs update = JdbcCodeGenerator.update(whereColumns, updateColumns, methodInfo);
 
         String sql = "UPDATE " + quoteTable(tableInfo) + update.query();
 
@@ -379,7 +378,7 @@ public class RepositoryEmitter {
             else
                 methodBuilder.beginControlFlow("if (jdbc.update($S, $L) == 1)", sql, CodeBlock.join(update.args(), ", "));
 
-            JdbcCodeGenerator.QueryAndArgs where = JdbcCodeGenerator.getQueryAndArgs(whereColumns, null, false, false, "WHERE ", " AND ", false, tableData);
+            JdbcCodeGenerator.QueryAndArgs where = JdbcCodeGenerator.where(whereColumns, null);
 
             StringBuilder columnQuery = new StringBuilder();
             boolean first = true;

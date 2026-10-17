@@ -19,81 +19,120 @@ public class JdbcCodeGenerator {
     public record QueryAndArgs(StringBuilder query, List<CodeBlock> args) {
     }
 
-    public static QueryAndArgs getQueryAndArgs(List<MethodParamInfo> params, MethodInfo methodInfo, boolean insert, boolean update, String prefix, String conjunction, boolean tableConstructor, TableData tableData) {
+    /** The clause a parameter list renders as: its keyword, the separator between parameters and how one column reads. */
+    private enum Clause {
+        WHERE("WHERE ", " AND "), INSERT(null, ","), SET("SET ", ",");
+
+        final String keyword, separator;
+
+        Clause(String keyword, String separator) {
+            this.keyword = keyword;
+            this.separator = separator;
+        }
+    }
+
+    /** " WHERE a=? AND (b=? OR c=?)" plus the method's @QuerySQL, if {@code methodInfo} is given and has one; "" with neither. */
+    public static QueryAndArgs where(List<MethodParamInfo> params, MethodInfo methodInfo) {
+        return clause(Clause.WHERE, params, methodInfo);
+    }
+
+    /** " (a,b)VALUES(?,?)" -- the column list from {@code params} (with generated ids), the placeholders from the method's own parameters. */
+    public static QueryAndArgs insert(List<MethodParamInfo> params, MethodInfo methodInfo) {
+        return clause(Clause.INSERT, params, methodInfo);
+    }
+
+    /** " SET a=?,b=?" followed by the WHERE of {@code whereParams} and the method's @QuerySQL. */
+    public static QueryAndArgs update(List<MethodParamInfo> whereParams, List<MethodParamInfo> setParams, MethodInfo methodInfo) {
+        QueryAndArgs where = where(whereParams, methodInfo);
+        QueryAndArgs values = clause(Clause.SET, setParams, null);
+
+        values.query.append(where.query);
+        values.args.addAll(where.args);
+
+        return values;
+    }
+
+    /** Constructor arguments rebuilding the row just inserted: the parameter values as written, no SQL conversion. */
+    public static List<CodeBlock> rowArgs(List<MethodParamInfo> params) {
+        List<CodeBlock> args = new ArrayList<>();
+        for (MethodParamInfo param : params)
+            for (ColumnInfo column : param.columns)
+                if (!(param.dataClass && column.idGenerator != null))
+                    args.add(CodeBlock.of("$L", argName(param, column)));
+        return args;
+    }
+
+    // A data-class parameter contributes one accessor per column; a plain parameter is its own value
+    private static String argName(MethodParamInfo param, ColumnInfo column) {
+        if (!param.dataClass)
+            return param.paramName;
+        return param.paramName + '.' + column.field.getSimpleName() + (param.isRecord ? "()" : "");
+    }
+
+    private static QueryAndArgs clause(Clause clause, List<MethodParamInfo> params, MethodInfo methodInfo) {
         StringBuilder queryBuilder = new StringBuilder();
         List<CodeBlock> args = new ArrayList<>();
 
         boolean haveCustomSql = methodInfo != null && methodInfo.querySqlParams != null;
         boolean customSqlOverride = haveCustomSql && methodInfo.querySql.override();
-        if (!tableConstructor && (!params.isEmpty() || haveCustomSql)) {
+        if (!params.isEmpty() || haveCustomSql) {
             queryBuilder.append(' ');
-            if (prefix != null && !customSqlOverride)
-                queryBuilder.append(prefix);
+            if (clause.keyword != null && !customSqlOverride)
+                queryBuilder.append(clause.keyword);
         }
         int conditionCount = -1;
         if (!customSqlOverride) {
-            if (insert)
+            if (clause == Clause.INSERT)
                 queryBuilder.append("(");
 
+            // Numbers the String[] copies checkAndConvertEnumToStringArray declares -- counted per call here, per method there
             int tempVarCount = 0;
 
             for (MethodParamInfo param : params) {
                 if (param.columns.isEmpty()) continue;
-                if (++conditionCount != 0) queryBuilder.append(conjunction);
+                if (++conditionCount != 0) queryBuilder.append(clause.separator);
 
-                // Query with multiple columns
-                if (!insert && !update && param.columns.size() > 1)
+                // One WHERE parameter over several columns matches any of them
+                boolean anyColumn = clause == Clause.WHERE && param.columns.size() > 1;
+                if (anyColumn)
                     queryBuilder.append("(");
                 int j = -1;
                 for (ColumnInfo column : param.columns) {
                     if (param.dataClass && column.idGenerator != null)
                         continue;
+                    if (++j != 0) queryBuilder.append(clause == Clause.WHERE ? " OR " : ",");
 
-                    if (insert || update) {
-                        if (++j != 0) queryBuilder.append(',');
-                    } else {
-                        if (++j != 0) queryBuilder.append(" OR ");
-                    }
-
-                    // Query where with ignore case
-                    if (!update && param.ignoreCase) {
-                        queryBuilder.append("LOWER(").append(quoteColumn(column.columnName)).append(") ").append(param.whereOperation).append(" LOWER(?)");
-                    } else if (insert) {
-                        queryBuilder.append(quoteColumn(column.columnName));
-                    } else {
-                        queryBuilder.append(quoteColumn(column.columnName))
-                                .append(!update && column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?')
+                    switch (clause) {
+                        case INSERT -> queryBuilder.append(quoteColumn(column.columnName));
+                        case SET -> queryBuilder.append(quoteColumn(column.columnName))
+                                .append(param.whereOperation).append('?')
                                 .append(enumBindCast(column, column.isArray));
-                    }
-
-                    String argName = param.paramName;
-                    // Get field if using data class
-                    if (param.dataClass) {
-                        argName += '.' + column.field.getSimpleName().toString();
-                        if (param.isRecord) argName += "()";
-                    }
-
-                    if (tableConstructor) {
-                        args.add(CodeBlock.of("$L", argName));
-                    } else {
-                        // If enum array exists, use pre-calculated variable
-                        if (column.isArray && column.isEnum) {
-                            argName = "var" + tempVarCount;
-                            tempVarCount++;
+                        case WHERE -> {
+                            if (param.ignoreCase)
+                                queryBuilder.append("LOWER(").append(quoteColumn(column.columnName)).append(") ").append(param.whereOperation).append(" LOWER(?)");
+                            else
+                                queryBuilder.append(quoteColumn(column.columnName))
+                                        .append(column.nullable ? " IS NOT DISTINCT FROM " : param.whereOperation).append('?')
+                                        .append(enumBindCast(column, column.isArray));
                         }
-
-                        appendArgs(args, argName, column.isArray, column.isEnum, column.nullable);
                     }
+
+                    String argName = argName(param, column);
+                    // An enum array binds as its String[] copy
+                    if (column.isArray && column.isEnum) {
+                        argName = "var" + tempVarCount;
+                        tempVarCount++;
+                    }
+                    appendArgs(args, argName, column.isArray, column.isEnum, column.nullable);
                 }
-                if (!insert && !update && param.columns.size() > 1)
+                if (anyColumn)
                     queryBuilder.append(")");
             }
-            if (insert)
+            if (clause == Clause.INSERT)
                 queryBuilder.append(')');
         }
 
-        // Append insert variables
-        if (methodInfo != null && insert) {
+        if (methodInfo != null && clause == Clause.INSERT) {
             queryBuilder.append("VALUES(");
             boolean first = true;
             for (MethodParamInfo info : methodInfo.params) {
@@ -106,9 +145,9 @@ public class JdbcCodeGenerator {
             queryBuilder.append(')');
         }
 
-        // Appends query SQL and parameters if present
+        // Custom @QuerySQL, joined to the generated conditions by its own conjunction
         if (methodInfo != null && methodInfo.querySql != null && methodInfo.querySqlParams != null) {
-            if (conditionCount > -1 && !insert)
+            if (conditionCount > -1 && clause != Clause.INSERT)
                 queryBuilder.append(' ').append(methodInfo.querySql.conjunction()).append(' ');
 
             for (SqlParamInfo sqlParam : methodInfo.querySqlParams) {
@@ -145,16 +184,6 @@ public class JdbcCodeGenerator {
         } else {
             args.add(CodeBlock.of("$L", argName));
         }
-    }
-
-    public static QueryAndArgs updateQueryAndArgs(List<MethodParamInfo> whereColumns, List<MethodParamInfo> updateColumns, MethodInfo methodInfo, TableData tableData) {
-        QueryAndArgs where = getQueryAndArgs(whereColumns, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
-        QueryAndArgs values = getQueryAndArgs(updateColumns, null, false, true, "SET ", ",", false, tableData);
-
-        values.query.append(where.query);
-        values.args.addAll(where.args);
-
-        return values;
     }
 
     public static MethodSpec.Builder getClassDefinition(MethodInfo methodInfo) {
@@ -293,12 +322,7 @@ public class JdbcCodeGenerator {
                 if (param.dataClass && column.idGenerator != null)
                     continue;
 
-                String argName = param.paramName;
-                if (param.dataClass) {
-                    argName += '.' + column.field.getSimpleName().toString();
-                    if (param.isRecord) argName += "()";
-                }
-
+                String argName = argName(param, column);
                 if (column.isArray && column.isEnum) {
                     if (column.isList) {
                         codeBlock.addStatement("$T[] var$L = new $T[$L.size()]", String.class, tempVarCount, String.class, argName);
