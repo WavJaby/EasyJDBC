@@ -7,7 +7,6 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
-import java.util.List;
 
 import static com.wavjaby.jdbc.util.StringConverter.convertPropertyNameToUnderscoreName;
 
@@ -71,14 +70,6 @@ public class TableInfo {
         this.repoClassPath = classPackagePath.isEmpty() ? repoClassName : classPackagePath + "." + repoClassName;
 
         this.virtualBaseClass = virtualBaseClass;
-    }
-
-    public String getUniqueKey(List<ColumnInfo> uniqueKey) {
-        StringBuilder sb = new StringBuilder(" " + name);
-        for (ColumnInfo info : uniqueKey) {
-            sb.append('_').append(info.columnName);
-        }
-        return sb.append("_UK").toString();
     }
 
     @Override

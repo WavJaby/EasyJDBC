@@ -136,7 +136,7 @@ public class SqlGenerator {
         }
         for (List<ColumnInfo> uniqueKey : tableData.uniqueKeyList) {
             builder.append(",\n");
-            builder.append("    CONSTRAINT").append(tableInfo.getUniqueKey(uniqueKey)).append(" UNIQUE (");
+            builder.append("    CONSTRAINT ").append(uniqueKeyName(tableInfo, uniqueKey)).append(" UNIQUE (");
             for (int i = 0; i < uniqueKey.size(); i++) {
                 if (i != 0) builder.append(',');
                 builder.append(quoteColumn(uniqueKey.get(i).columnName));
@@ -158,6 +158,13 @@ public class SqlGenerator {
         builder.append("\n);");
 
         return false;
+    }
+
+    private static String uniqueKeyName(TableInfo tableInfo, List<ColumnInfo> uniqueKey) {
+        StringBuilder name = new StringBuilder(tableInfo.name);
+        for (ColumnInfo column : uniqueKey)
+            name.append('_').append(column.columnName);
+        return name.append("_UK").toString();
     }
 
     // NO_ACTION is the SQL default, so it is left implicit and existing DDL stays byte-identical
