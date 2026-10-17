@@ -1,0 +1,5 @@
+=== diagnostics (4) ===
+ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getAllByAge(int)' return type 'java.util.List<fx.Named>' is not acceptable
+ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNameByAge(int)' return type 'java.lang.String' is not acceptable
+ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNameById(long)' return type 'fx.PersonName' is not acceptable
+ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNamesByAge(int)' return type 'java.util.List<fx.PersonName>' is not acceptable
