@@ -5,6 +5,8 @@ import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
+import com.wavjaby.jdbc.processor.resolve.ForeignKeyGroup;
+import com.wavjaby.jdbc.processor.resolve.ResolvedTable;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.VariableElement;
@@ -15,9 +17,10 @@ import static com.wavjaby.jdbc.processor.util.PostgresDialect.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {
-    public static boolean generateCreateViewSql(TableData tableData, StringBuilder builder, Messager console) {
+    public static boolean generateCreateViewSql(ResolvedTable view, StringBuilder builder, Messager console) {
+        TableData tableData = view.table;
         TableInfo tableInfo = tableData.tableInfo;
-        TableData base = tableData.getVirtualBaseTableData();
+        TableData base = view.viewBase;
         String baseTableShortName = "B";
 
         StringBuilder joinSql = new StringBuilder();
@@ -29,13 +32,14 @@ public class SqlGenerator {
             if (!first) builder.append(',');
             first = false;
 
-            String targetTableFullName = base.equals(columnInfo.tableData)
-                    ? baseTableShortName : quoteTable(columnInfo.tableInfo);
+            ResolvedTable.ViewSource source = view.viewSource(columnInfo);
+            String targetTableFullName = base.equals(source.table())
+                    ? baseTableShortName : quoteTable(source.table().tableInfo);
 
             if (columnInfo.defaultValue != null)
                 builder.append("COALESCE(");
 
-            String sourceColumnName = columnInfo.getSourceColumnName();
+            String sourceColumnName = source.columnName();
             builder.append(targetTableFullName).append('.').append(quoteColumn(sourceColumnName));
 
             if (columnInfo.defaultValue != null)
@@ -45,7 +49,7 @@ public class SqlGenerator {
 
             // Add reference column join info
             if (columnInfo.joinColumn != null) {
-                ColumnInfo referenceColumn = columnInfo.getReferencedColumn();
+                ColumnInfo referenceColumn = view.referencedColumn(columnInfo);
                 List<ColumnInfo> columnJoinInfo = joinInfoMap.computeIfAbsent(referenceColumn.tableData, k -> new ArrayList<>());
                 columnJoinInfo.add(columnInfo);
             }
@@ -60,15 +64,16 @@ public class SqlGenerator {
 
             boolean firstJoin = true;
             for (ColumnInfo columnInfo : entry.getValue()) {
-                String targetTableFullName = base.equals(columnInfo.tableData)
-                        ? baseTableShortName : quoteTable(columnInfo.tableInfo);
+                ResolvedTable.ViewSource source = view.viewSource(columnInfo);
+                String targetTableFullName = base.equals(source.table())
+                        ? baseTableShortName : quoteTable(source.table().tableInfo);
 
-                ColumnInfo referenceColumn = columnInfo.getReferencedColumn();
+                ColumnInfo referenceColumn = view.referencedColumn(columnInfo);
 
                 if (!firstJoin)
                     joinSql.append(" AND ");
                 firstJoin = false;
-                joinSql.append(targetTableFullName).append('.').append(quoteColumn(columnInfo.getSourceColumnName())).append('=')
+                joinSql.append(targetTableFullName).append('.').append(quoteColumn(source.columnName())).append('=')
                         .append(referenceTableFullName).append('.').append(quoteColumn(referenceColumn.columnName));
             }
         }
@@ -81,7 +86,8 @@ public class SqlGenerator {
         return false;
     }
 
-    public static boolean generateCreateTableSql(TableData tableData, StringBuilder builder, Messager console) {
+    public static boolean generateCreateTableSql(ResolvedTable table, StringBuilder builder, Messager console) {
+        TableData tableData = table.table;
         TableInfo tableInfo = tableData.tableInfo;
         builder.append("CREATE TABLE IF NOT EXISTS ").append(quoteTable(tableInfo)).append("(");
         boolean first = true;
@@ -138,15 +144,15 @@ public class SqlGenerator {
             builder.append(")");
         }
 
-        for (TableData.ForeignKeyGroup foreignKeyGroup : tableData.foreignKeyList) {
-            String foreignKeyName = tableInfo.name + '_' + String.join("__", foreignKeyGroup.sourceColumns) + "_FK";
+        for (ForeignKeyGroup foreignKeyGroup : table.foreignKeys) {
+            String foreignKeyName = tableInfo.name + '_' + String.join("__", foreignKeyGroup.sourceColumns()) + "_FK";
 
             builder.append(",\n");
             builder.append("    CONSTRAINT ").append(foreignKeyName).append(" FOREIGN KEY (")
-                    .append(String.join(",", foreignKeyGroup.sourceColumns).toLowerCase()).append(") REFERENCES ")
-                    .append(quoteTable(foreignKeyGroup.referencedTable)).append("(").append(String.join(",", foreignKeyGroup.referencedColumns).toLowerCase()).append(")");
-            appendReferentialAction(builder, "ON UPDATE", foreignKeyGroup.onUpdate);
-            appendReferentialAction(builder, "ON DELETE", foreignKeyGroup.onDelete);
+                    .append(String.join(",", foreignKeyGroup.sourceColumns()).toLowerCase()).append(") REFERENCES ")
+                    .append(quoteTable(foreignKeyGroup.referencedTable())).append("(").append(String.join(",", foreignKeyGroup.referencedColumns()).toLowerCase()).append(")");
+            appendReferentialAction(builder, "ON UPDATE", foreignKeyGroup.onUpdate());
+            appendReferentialAction(builder, "ON DELETE", foreignKeyGroup.onDelete());
         }
 
         builder.append("\n);");

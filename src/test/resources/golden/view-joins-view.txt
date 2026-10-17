@@ -1,2 +1,158 @@
-=== diagnostics (1) ===
-ERROR ShopCard.java: Field 'name' not found in table 'fx.OwnerCard'. A table is only referenced once some field joins it with '@JoinColumn'
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS "owner"(
+            id BIGINT NOT NULL,
+            name_raw VARCHAR,
+            CONSTRAINT owner_PK PRIMARY KEY(id)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS shop(
+            id BIGINT NOT NULL,
+            owner_id BIGINT NOT NULL,
+            CONSTRAINT shop_PK PRIMARY KEY(id)
+        );""");
+    jdbc.execute("""
+        CREATE OR REPLACE VIEW owner_card AS SELECT B.id,B.name_raw as name
+            FROM "owner" B;""");
+    jdbc.execute("""
+        CREATE OR REPLACE VIEW shop_card AS SELECT B.id,B.owner_id,owner_card.name as owner_name
+            FROM shop B
+            LEFT JOIN owner_card ON B.owner_id=owner_card.id;""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/OwnerCardRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class OwnerCardRepositoryImpl implements OwnerCardRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<OwnerCard> tableMapper;
+
+  public OwnerCardRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(OwnerCard.class, 2);
+  }
+
+  @Override
+  public OwnerCard getById(long id) {
+    List<OwnerCard> result = jdbc.query("SELECT id,name FROM owner_card WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}
+
+=== generated: fx/OwnerRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class OwnerRepositoryImpl implements OwnerRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Owner> tableMapper;
+
+  public OwnerRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Owner.class, 2);
+  }
+
+  @Override
+  public Owner save(Owner row) {
+    jdbc.update("INSERT INTO \"owner\" (id,name_raw)VALUES(?,?)", row.id(), row.nameRaw());
+    return new Owner(row.id(), row.nameRaw());
+  }
+}
+
+=== generated: fx/ShopCardRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ShopCardRepositoryImpl implements ShopCardRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<ShopCard> tableMapper;
+
+  public ShopCardRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(ShopCard.class, 3);
+  }
+
+  @Override
+  public ShopCard getById(long id) {
+    List<ShopCard> result = jdbc.query("SELECT id,owner_id,owner_name FROM shop_card WHERE id=?", tableMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+}
+
+=== generated: fx/ShopRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ShopRepositoryImpl implements ShopRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Shop> tableMapper;
+
+  public ShopRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Shop.class, 2);
+  }
+
+  @Override
+  public Shop save(Shop row) {
+    jdbc.update("INSERT INTO shop (id,owner_id)VALUES(?,?)", row.id(), row.ownerId());
+    return new Shop(row.id(), row.ownerId());
+  }
+}

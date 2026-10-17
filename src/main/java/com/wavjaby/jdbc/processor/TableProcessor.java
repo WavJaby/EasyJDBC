@@ -4,6 +4,8 @@ import com.google.auto.service.AutoService;
 import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.processor.model.*;
+import com.wavjaby.jdbc.processor.resolve.ResolvedTable;
+import com.wavjaby.jdbc.processor.resolve.Resolver;
 import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
 import com.wavjaby.jdbc.processor.util.ProcessorUtil;
 import com.wavjaby.jdbc.processor.util.SqlGenerator;
@@ -75,20 +77,19 @@ public class TableProcessor extends AbstractProcessor {
                 }
             }
 
-            boolean allSuccess = true;
-            for (TableData tableData : tableDataMap.values())
-                if (processTableData(tableData, tableDataMap)) allSuccess = false;
-            if (!allSuccess)
+            Map<String, ResolvedTable> resolvedTables = Resolver.resolve(tableDataMap, console);
+            if (resolvedTables == null)
                 return false;
 
+            boolean allSuccess = true;
             for (TableData tableData : tableDataMap.values())
                 if (generateFile(tableData)) allSuccess = false;
             if (!allSuccess)
                 return false;
 
-            Map<String, TableData> tableDependency = new LinkedHashMap<>();
-            for (TableData data : tableDataMap.values()) {
-                processTableDependency(data, tableDataMap, tableDependency);
+            Map<String, ResolvedTable> tableDependency = new LinkedHashMap<>();
+            for (ResolvedTable table : resolvedTables.values()) {
+                processTableDependency(table, resolvedTables, tableDependency);
             }
 
             if (generateInitFile(tableDataMap, tableDependency))
@@ -105,15 +106,16 @@ public class TableProcessor extends AbstractProcessor {
         }
     }
 
-    private void processTableDependency(TableData data, Map<String, TableData> tableDataMap, Map<String, TableData> dependency) {
-        if (data.tableInfo.isVirtual)
-            processTableDependency(data.getVirtualBaseTableData(), tableDataMap, dependency);
-        for (ColumnInfo info : data.tableFields.values()) {
-            ColumnInfo referencedColumn = info.getReferencedColumn();
+    // Post-order: every table or view lands after the ones its DDL names
+    private void processTableDependency(ResolvedTable table, Map<String, ResolvedTable> resolvedTables, Map<String, ResolvedTable> dependency) {
+        if (table.viewBase != null)
+            processTableDependency(resolvedTables.get(table.viewBase.tableInfo.classPath), resolvedTables, dependency);
+        for (ColumnInfo info : table.table.tableFields.values()) {
+            ColumnInfo referencedColumn = table.referencedColumn(info);
             if (referencedColumn != null && !dependency.containsKey(info.referencedTableClassPath))
-                processTableDependency(referencedColumn.tableData, tableDataMap, dependency);
+                processTableDependency(resolvedTables.get(referencedColumn.tableData.tableInfo.classPath), resolvedTables, dependency);
         }
-        dependency.put(data.tableInfo.classPath, data);
+        dependency.put(table.table.tableInfo.classPath, table);
     }
 
     private TableData parseTableData(TypeElement element) {
@@ -150,20 +152,7 @@ public class TableProcessor extends AbstractProcessor {
         return tableData;
     }
 
-    private boolean processTableData(TableData tableData, Map<String, TableData> tableDataMap) {
-        for (ColumnInfo column : tableData.tableFields.values()) {
-            // Prepare referencedColumnInfo and referencedTableData
-            if (column.processTableJoin(tableDataMap, tableData, console))
-                return true;
-        }
-
-        if (tableData.tableInfo.isVirtual && tableData.processVirtualTable(tableData, tableDataMap, console))
-            return true;
-
-        return tableData.processTableJoin(tableData, tableDataMap, console);
-    }
-
-    private boolean generateInitFile(Map<String, TableData> tableDataMap, Map<String, TableData> tableDependency) {
+    private boolean generateInitFile(Map<String, TableData> tableDataMap, Map<String, ResolvedTable> tableDependency) {
         String classPackage = "com.wavjaby.jdbc.util";
         String className = "RepositoryInit";
 
@@ -197,8 +186,8 @@ public class TableProcessor extends AbstractProcessor {
 
         // Create enum type init code, keyed by type name: one CREATE TYPE per name however many columns use it
         Map<String, TypeElement> enumTypes = new LinkedHashMap<>();
-        for (TableData tableData : tableDependency.values()) {
-            for (ColumnInfo column : tableData.tableFields.values()) {
+        for (ResolvedTable table : tableDependency.values()) {
+            for (ColumnInfo column : table.table.tableFields.values()) {
                 if (column.nativeEnum) {
                     if (column.type instanceof DeclaredType declaredType && declaredType.asElement() instanceof TypeElement typeElement) {
                         enumTypes.putIfAbsent(enumTypeName(column.type), typeElement);
@@ -216,19 +205,19 @@ public class TableProcessor extends AbstractProcessor {
         }
 
         // Create table create SQL
-        List<TableData> tables = new ArrayList<>(tableDependency.values());
+        List<ResolvedTable> tables = new ArrayList<>(tableDependency.values());
         tables.sort((a, b) -> {
-            if (a.tableInfo.isVirtual && !b.tableInfo.isVirtual) return 1;
-            if (!a.tableInfo.isVirtual && b.tableInfo.isVirtual) return -1;
+            if (a.table.tableInfo.isVirtual && !b.table.tableInfo.isVirtual) return 1;
+            if (!a.table.tableInfo.isVirtual && b.table.tableInfo.isVirtual) return -1;
             return 0;
         });
-        for (TableData tableData : tables) {
+        for (ResolvedTable table : tables) {
             StringBuilder tableCreateSql = new StringBuilder();
-            if (tableData.tableInfo.isVirtual) {
-                if (SqlGenerator.generateCreateViewSql(tableData, tableCreateSql, console))
+            if (table.table.tableInfo.isVirtual) {
+                if (SqlGenerator.generateCreateViewSql(table, tableCreateSql, console))
                     return true;
             } else {
-                if (SqlGenerator.generateCreateTableSql(tableData, tableCreateSql, console))
+                if (SqlGenerator.generateCreateTableSql(table, tableCreateSql, console))
                     return true;
             }
             initSchemeAndTable.addStatement("jdbc.execute(\"\"\"\n$L\"\"\")", tableCreateSql);

@@ -9,7 +9,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.*;
 import java.util.List;
-import java.util.Map;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationMirror;
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.getAnnotationValueClass;
@@ -41,22 +40,8 @@ public class ColumnInfo {
 
     public final JoinColumn joinColumn;
     public final String referencedTableClassPath;
-    // Set by processTableJoin in the link pass; cross-table links are by instance, so this cannot be final until resolve owns them
-    private ColumnInfo referencedColumn;
-
-    // @FieldName source column. Defaults to columnName so non-virtual tables read it without branching
-    private final String sourceColumnName;
 
     public ColumnInfo(VariableElement field, TableData tableData) {
-        this(field, tableData, null, null);
-    }
-
-    /**
-     * Virtual-table column: declared by {@code field}, stored in {@code tableData}'s table under {@code sourceColumnName}.
-     * Null {@code sourceColumnName} -> the column's own name.
-     */
-    ColumnInfo(VariableElement field, TableData tableData, String sourceColumnName, ColumnInfo referencedColumn) {
-        this.referencedColumn = referencedColumn;
         this.column = field.getAnnotation(Column.class);
         this.tableInfo = tableData.tableInfo;
         this.tableData = tableData;
@@ -118,7 +103,6 @@ public class ColumnInfo {
         ColumnDefault columnDefault = field.getAnnotation(ColumnDefault.class);
         this.defaultValue = columnDefault == null || columnDefault.value().isBlank() ? null : columnDefault.value();
         this.columnName = getColumnName(field);
-        this.sourceColumnName = sourceColumnName != null ? sourceColumnName : this.columnName;
 
         boolean isUniqueKey = false;
         boolean isGroupedUniqueKey = false;
@@ -198,43 +182,4 @@ public class ColumnInfo {
         return convertPropertyNameToUnderscoreName(field.getSimpleName().toString()).toLowerCase();
     }
 
-    public boolean processTableJoin(Map<String, TableData> tableDataMap, TableData tableData, Messager console) {
-        if (joinColumn == null) return false;
-        TableData referencedTableData = tableDataMap.get(referencedTableClassPath);
-        if (referencedTableData == null) {
-            console.printMessage(ERROR, "Referenced table class '" + referencedTableClassPath + "' not found in the provided table data map.", field);
-            return true;
-        }
-
-        // Find referenced ColumnInfo
-        ColumnInfo referencedColumnInfo = null;
-        if (!joinColumn.referencedColumnName().isEmpty()) {
-            referencedColumnInfo = referencedTableData.tableColumns.get(joinColumn.referencedColumnName());
-            if (referencedColumnInfo == null) {
-                console.printMessage(ERROR, "Referenced column '" + joinColumn.referencedColumnName() + "' not exist in table '" + referencedTableClassPath + "'", field);
-                return true;
-            }
-        } else {
-            referencedColumnInfo = referencedTableData.tableFields.get(joinColumn.referencedClassFieldName());
-            if (referencedColumnInfo == null) {
-                console.printMessage(ERROR, "Referenced field '" + joinColumn.referencedClassFieldName() + "' not exist in table '" + referencedTableClassPath + "'", field);
-                return true;
-            }
-        }
-        this.referencedColumn = referencedColumnInfo;
-
-        return false;
-    }
-
-    public String getSourceColumnName() {
-        return sourceColumnName;
-    }
-
-    public ColumnInfo getReferencedColumn() {
-        return referencedColumn;
-    }
-
-    public String getForeignKeyName() {
-        return tableInfo.name + '_' + columnName + "_FK";
-    }
 }

@@ -1,7 +1,5 @@
 package com.wavjaby.jdbc.processor.model;
 
-import com.wavjaby.jdbc.annotation.FieldName;
-import com.wavjaby.jdbc.annotation.JoinColumn;
 import com.wavjaby.jdbc.annotation.Table;
 import com.wavjaby.jdbc.annotation.UniqueConstraint;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
@@ -11,12 +9,12 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
 import java.util.*;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
+/** Stage A: one table as declared -- its own columns, keys and repository methods. Nothing here looks at another table. */
 public class TableData {
     public final TableInfo tableInfo;
     public final Map<String, String> classDependency = new HashMap<>();
@@ -26,40 +24,6 @@ public class TableData {
 
     public final List<ColumnInfo> primaryKey = new ArrayList<>();
     public final List<List<ColumnInfo>> uniqueKeyList = new ArrayList<>();
-    public final List<ForeignKeyGroup> foreignKeyList = new ArrayList<>();
-
-    private TableData virtualBaseTableData;
-
-    public static class ForeignKeyGroup {
-        public final TableInfo referencedTable;
-        public final List<String> referencedColumns;
-        public final List<String> sourceColumns;
-        // null until the first column joins the group; every later column must declare the same actions
-        public JoinColumn.Action onUpdate, onDelete;
-
-        public ForeignKeyGroup(TableInfo referencedTable, List<String> referencedColumns, List<String> sourceColumns) {
-            this.referencedTable = referencedTable;
-            this.referencedColumns = referencedColumns;
-            this.sourceColumns = sourceColumns;
-        }
-
-        ForeignKeyGroup(TableInfo referencedTable) {
-            this(referencedTable, new ArrayList<>(), new ArrayList<>());
-        }
-
-        ForeignKeyGroup(TableInfo referencedTable, String referencedColumn, String sourceColumn) {
-            this(referencedTable, Collections.singletonList(referencedColumn), Collections.singletonList(sourceColumn));
-        }
-
-        // false on conflict: one constraint carries one ON UPDATE / ON DELETE, so composite FK columns cannot disagree
-        boolean applyActions(JoinColumn joinColumn) {
-            if (onUpdate != null && (onUpdate != joinColumn.onUpdate() || onDelete != joinColumn.onDelete()))
-                return false;
-            onUpdate = joinColumn.onUpdate();
-            onDelete = joinColumn.onDelete();
-            return true;
-        }
-    }
 
     public TableData(TableInfo tableInfo) {
         this.tableInfo = tableInfo;
@@ -160,124 +124,6 @@ public class TableData {
         return error;
     }
 
-    /**
-     * Process {@code @JoinColumn} annotation class link, column foreign key
-     */
-    public boolean processTableJoin(TableData tableData, Map<String, TableData> tableDataMap, Messager console) {
-        for (ColumnInfo column : tableData.tableFields.values()) {
-            if (column.getReferencedColumn() == null) continue;
-            ColumnInfo referencedColumn = column.getReferencedColumn();
-
-            boolean addToGroup = true;
-            for (ColumnInfo target : tableData.tableFields.values()) {
-                if (target.getReferencedColumn() == null) continue;
-                if (column == target)
-                    continue;
-
-                ColumnInfo otherReferencedColumn = target.getReferencedColumn();
-                if (referencedColumn.tableInfo.equals(otherReferencedColumn.tableInfo) &&
-                        referencedColumn.columnName.equals(otherReferencedColumn.columnName)) {
-                    addToGroup = false;
-                    break;
-                }
-            }
-
-            // have duplicated target columns, create new group
-            assert column.joinColumn != null;
-            if (!addToGroup) {
-                ForeignKeyGroup group = new ForeignKeyGroup(referencedColumn.tableInfo, referencedColumn.columnName, column.columnName);
-                group.applyActions(column.joinColumn);
-                this.foreignKeyList.add(group);
-            } else {
-                // Find group to add
-                ForeignKeyGroup foreignKeyGroup = null;
-                for (ForeignKeyGroup group : this.foreignKeyList) {
-                    if (group.referencedTable.name.equals(referencedColumn.tableInfo.name)) {
-                        foreignKeyGroup = group;
-                        break;
-                    }
-                }
-                if (foreignKeyGroup == null) {
-                    foreignKeyGroup = new ForeignKeyGroup(referencedColumn.tableInfo);
-                    this.foreignKeyList.add(foreignKeyGroup);
-                }
-
-                if (!foreignKeyGroup.applyActions(column.joinColumn)) {
-                    console.printMessage(ERROR, "onUpdate/onDelete differ from the other columns of the composite foreign key to " + referencedColumn.tableInfo.name, column.field);
-                    return true;
-                }
-                foreignKeyGroup.sourceColumns.add(column.columnName);
-                foreignKeyGroup.referencedColumns.add(referencedColumn.columnName);
-            }
-        }
-        return false;
-    }
-
-    public boolean processVirtualTable(TableData tableData, Map<String, TableData> tableDataMap, Messager console) {
-        TableInfo tableInfo = tableData.tableInfo;
-        String virtualBaseClass = tableInfo.virtualBaseClass.toString();
-        TableData virtualBaseTableData = tableDataMap.get(virtualBaseClass);
-        if (virtualBaseTableData == null) {
-            console.printMessage(ERROR, "Virtual table base '" + virtualBaseClass + "' is not a table", tableInfo.tableClassEle, tableInfo.tableAnnMirror);
-            return true;
-        }
-        this.virtualBaseTableData = virtualBaseTableData;
-
-        // Get all referenced tables
-        Map<String, TableData> referencedTables = new LinkedHashMap<>();
-        referencedTables.put(virtualBaseClass, virtualBaseTableData);
-        for (ColumnInfo info : tableData.tableFields.values()) {
-            if (info.joinColumn == null)
-                continue;
-
-            if (virtualBaseClass.equals(info.referencedTableClassPath)) {
-                AnnotationMirror joinTableColumnMirror = getAnnotationMirror(info.field, JoinColumn.class);
-                AnnotationValue referencedClass = getAnnotationValue(joinTableColumnMirror, "referencedClass");
-                console.printMessage(ERROR, "Virtual table cannot reference itself", info.field, joinTableColumnMirror, referencedClass);
-                return true;
-            }
-
-            referencedTables.put(info.referencedTableClassPath, info.getReferencedColumn().tableData);
-        }
-
-        for (ColumnInfo info : tableData.tableFields.values()) {
-            String fieldName = info.field.getSimpleName().toString();
-
-            String sourceFieldName = fieldName;
-            String aliasTableClassPath = null;
-            FieldName alias = info.field.getAnnotation(FieldName.class);
-            if (alias != null) {
-                if (!alias.value().trim().isEmpty())
-                    sourceFieldName = alias.value().trim();
-                DeclaredType aliasClass = getAnnotationValueClass(getAnnotationMirror(info.field, FieldName.class), "referencedClass");
-                if (aliasClass != null)
-                    aliasTableClassPath = aliasClass.toString();
-            }
-
-            ColumnInfo targetColumn = null;
-            for (TableData table : referencedTables.values()) {
-                if (aliasTableClassPath != null && !aliasTableClassPath.equals(table.tableInfo.classPath))
-                    continue;
-                targetColumn = table.tableFields.get(sourceFieldName);
-                if (targetColumn != null) break;
-            }
-            if (targetColumn == null) {
-                console.printMessage(ERROR, aliasTableClassPath == null
-                        ? "Field '" + sourceFieldName + "' not found in any referenced table"
-                        : "Field '" + sourceFieldName + "' not found in table '" + aliasTableClassPath + "'. A table is only referenced once some field joins it with '@JoinColumn'",
-                        info.field);
-                return true;
-            }
-            // Redirect field table to target table; info.getReferencedColumn() is null unless the field has @JoinColumn
-            targetColumn = new ColumnInfo(info.field, targetColumn.tableData, targetColumn.columnName,info.getReferencedColumn());
-
-            tableColumns.put(info.columnName, targetColumn);
-            tableFields.put(fieldName, targetColumn);
-        }
-
-        return false;
-    }
-
     public void addDependency(String classPath) {
         String className = classPath.substring(classPath.lastIndexOf('.') + 1);
         String fieldName = Character.toLowerCase(className.charAt(0)) + className.substring(1);
@@ -294,10 +140,6 @@ public class TableData {
 
     public Map<String, String> getDependencies() {
         return classDependency;
-    }
-
-    public TableData getVirtualBaseTableData() {
-        return virtualBaseTableData;
     }
 
     @Override
