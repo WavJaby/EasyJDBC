@@ -1,5 +1,4 @@
 === diagnostics (3) ===
-ERROR PersonRepository.java: 
-  Projection record 'fx.PersonName' selects the columns its components name: remove @Select
+ERROR PersonRepository.java: Projection record 'fx.PersonName' selects the columns its components name: remove @Select
 ERROR PersonRepository.java: Return type 'fx.Named' is a supertype of table class 'fx.Person': return the table class itself, or a projection record of the columns needed
 ERROR PersonRepository.java: Return type 'java.lang.Long' does not match field 'name' of type 'java.lang.String'

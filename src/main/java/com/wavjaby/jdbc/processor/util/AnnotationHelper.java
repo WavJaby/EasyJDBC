@@ -21,14 +21,14 @@ public class AnnotationHelper {
 
         AnnotationMirror mirror = getAnnotationMirror(element, clazz);
         AnnotationValue value = mirror == null ? null : AnnotationHelper.getAnnotationValue(mirror, key);
-        console.printMessage(ERROR, "\n" + message, element, mirror, value);
+        console.printMessage(ERROR, message, element, mirror, value);
     }
 
     public static void printError(Messager console, Element element, Class<? extends Annotation> clazz,
                                   String message) {
 
         AnnotationMirror mirror = getAnnotationMirror(element, clazz);
-        console.printMessage(ERROR, "\n" + message, element, mirror);
+        console.printMessage(ERROR, message, element, mirror);
     }
 
     public static String getSimpleNameOrDefault(Element element, String defaultValue) {
