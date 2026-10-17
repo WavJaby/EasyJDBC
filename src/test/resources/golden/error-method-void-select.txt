@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR ItemRepository.java: Only insert, update method allow return void, method: getById(long)

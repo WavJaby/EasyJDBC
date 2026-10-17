@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR ItemRepository.java: Unsupported method return type: java.util.List<fx.Item>, for update method

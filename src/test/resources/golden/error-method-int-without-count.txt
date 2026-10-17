@@ -1,0 +1,2 @@
+=== diagnostics (1) ===
+ERROR ItemRepository.java: Unrecognized return type for int method: getNameLengthById(long)
