@@ -2,6 +2,7 @@ package com.wavjaby.jdbc.processor.resolve;
 
 import com.wavjaby.jdbc.annotation.FieldName;
 import com.wavjaby.jdbc.annotation.JoinColumn;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.model.TableInfo;
@@ -29,26 +30,28 @@ public final class Resolver {
         this.console = console;
     }
 
-    /** classPath -> resolved table, in {@code tables} order; null when any table failed, each failure already reported. */
-    public static Map<String, ResolvedTable> resolve(Map<String, TableData> tables, Messager console) {
+    /** classPath -> resolved table, in {@code tables} order. Every table is resolved so each bad one reports; throws after the last when any failed. */
+    public static Map<String, ResolvedTable> resolve(Map<String, TableData> tables, Messager console) throws EmptyProcessingException {
         Resolver resolver = new Resolver(tables, console);
         Map<String, ResolvedTable> resolved = new LinkedHashMap<>();
-        boolean allSuccess = true;
+        boolean error = false;
         for (Map.Entry<String, TableData> entry : tables.entrySet()) {
-            ResolvedTable table = resolver.resolveTable(entry.getValue());
-            if (table == null) allSuccess = false;
-            else resolved.put(entry.getKey(), table);
+            try {
+                resolved.put(entry.getKey(), resolver.resolveTable(entry.getValue()));
+            } catch (EmptyProcessingException e) {
+                error = true;
+            }
         }
-        return allSuccess ? resolved : null;
+        if (error)
+            throw new EmptyProcessingException();
+        return resolved;
     }
 
-    private ResolvedTable resolveTable(TableData table) {
+    private ResolvedTable resolveTable(TableData table) throws EmptyProcessingException {
         Map<ColumnInfo, ColumnInfo> references = new HashMap<>();
         for (ColumnInfo column : table.tableFields.values()) {
             if (column.joinColumn == null) continue;
-            ColumnInfo referenced = resolveReference(column);
-            if (referenced == null) return null;
-            references.put(column, referenced);
+            references.put(column, resolveReference(column));
         }
 
         TableData viewBase = null;
@@ -59,24 +62,22 @@ public final class Resolver {
             viewBase = tables.get(virtualBaseClass);
             if (viewBase == null) {
                 console.printMessage(ERROR, "Virtual table base '" + virtualBaseClass + "' is not a table", tableInfo.tableClassEle, tableInfo.tableAnnMirror);
-                return null;
+                throw new EmptyProcessingException();
             }
             viewSources = resolveViewSources(table, viewBase, references);
-            if (viewSources == null) return null;
         }
 
         List<ForeignKeyGroup> foreignKeys = groupForeignKeys(table, references);
-        if (foreignKeys == null) return null;
 
         return new ResolvedTable(table, references, foreignKeys, viewBase, viewSources);
     }
 
-    private ColumnInfo resolveReference(ColumnInfo column) {
+    private ColumnInfo resolveReference(ColumnInfo column) throws EmptyProcessingException {
         JoinColumn joinColumn = column.joinColumn;
         TableData referencedTableData = tables.get(column.referencedTableClassPath);
         if (referencedTableData == null) {
             console.printMessage(ERROR, "Referenced table class '" + column.referencedTableClassPath + "' not found in the provided table data map.", column.field);
-            return null;
+            throw new EmptyProcessingException();
         }
 
         ColumnInfo referencedColumnInfo;
@@ -84,20 +85,20 @@ public final class Resolver {
             referencedColumnInfo = referencedTableData.tableColumns.get(joinColumn.referencedColumnName());
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced column '" + joinColumn.referencedColumnName() + "' not exist in table '" + column.referencedTableClassPath + "'", column.field);
-                return null;
+                throw new EmptyProcessingException();
             }
         } else {
             referencedColumnInfo = referencedTableData.tableFields.get(joinColumn.referencedClassFieldName());
             if (referencedColumnInfo == null) {
                 console.printMessage(ERROR, "Referenced field '" + joinColumn.referencedClassFieldName() + "' not exist in table '" + column.referencedTableClassPath + "'", column.field);
-                return null;
+                throw new EmptyProcessingException();
             }
         }
         return referencedColumnInfo;
     }
 
     // A view column reads from the base table or from a table some @JoinColumn field of the view joins; @FieldName renames and may pin the table
-    private Map<ColumnInfo, ResolvedTable.ViewSource> resolveViewSources(TableData table, TableData viewBase, Map<ColumnInfo, ColumnInfo> references) {
+    private Map<ColumnInfo, ResolvedTable.ViewSource> resolveViewSources(TableData table, TableData viewBase, Map<ColumnInfo, ColumnInfo> references) throws EmptyProcessingException {
         String virtualBaseClass = table.tableInfo.virtualBaseClass.toString();
 
         // Get all referenced tables
@@ -111,7 +112,7 @@ public final class Resolver {
                 AnnotationMirror joinTableColumnMirror = getAnnotationMirror(info.field, JoinColumn.class);
                 AnnotationValue referencedClass = getAnnotationValue(joinTableColumnMirror, "referencedClass");
                 console.printMessage(ERROR, "Virtual table cannot reference itself", info.field, joinTableColumnMirror, referencedClass);
-                return null;
+                throw new EmptyProcessingException();
             }
 
             referencedTables.put(info.referencedTableClassPath, references.get(info).tableData);
@@ -142,7 +143,7 @@ public final class Resolver {
                                 ? "Field '" + sourceFieldName + "' not found in any referenced table"
                                 : "Field '" + sourceFieldName + "' not found in table '" + aliasTableClassPath + "'. A table is only referenced once some field joins it with '@JoinColumn'",
                         info.field);
-                return null;
+                throw new EmptyProcessingException();
             }
             viewSources.put(info, new ResolvedTable.ViewSource(targetColumn.tableData, targetColumn.columnName));
         }
@@ -154,7 +155,7 @@ public final class Resolver {
      * Each must reference the referenced table's primary key or one of its unique constraints -- PostgreSQL refuses anything else at CREATE TABLE.
      * A view gets none: its @JoinColumn is a JOIN, which may follow any column.
      */
-    private List<ForeignKeyGroup> groupForeignKeys(TableData table, Map<ColumnInfo, ColumnInfo> references) {
+    private List<ForeignKeyGroup> groupForeignKeys(TableData table, Map<ColumnInfo, ColumnInfo> references) throws EmptyProcessingException {
         if (table.tableInfo.isVirtual)
             return List.of();
 
@@ -177,11 +178,11 @@ public final class Resolver {
                 if (referenced.tableData != referencedTable) {
                     console.printMessage(ERROR, "@JoinColumn group '" + column.joinColumn.group() + "' references both '" + referencedTable.tableInfo.classPath +
                             "' and '" + referenced.tableData.tableInfo.classPath + "': one foreign key references one table", column.field);
-                    return null;
+                    throw new EmptyProcessingException();
                 }
                 if (column.joinColumn.onUpdate() != onUpdate || column.joinColumn.onDelete() != onDelete) {
                     console.printMessage(ERROR, "onUpdate/onDelete differ from the other columns of the composite foreign key to " + referencedTable.tableInfo.name, column.field);
-                    return null;
+                    throw new EmptyProcessingException();
                 }
                 sourceColumns.add(column.columnName);
                 referencedColumns.add(referenced.columnName);
@@ -189,7 +190,7 @@ public final class Resolver {
             if (!isKey(referencedTable, referencedColumns)) {
                 console.printMessage(ERROR, "Foreign key (" + String.join(",", sourceColumns) + ") references (" + String.join(",", referencedColumns) + ") of '" +
                         referencedTable.tableInfo.classPath + "', which is neither its primary key nor one of its unique constraints", first.field);
-                return null;
+                throw new EmptyProcessingException();
             }
             foreignKeys.add(new ForeignKeyGroup(referencedTable.tableInfo, List.copyOf(referencedColumns), List.copyOf(sourceColumns), onUpdate, onDelete));
         }

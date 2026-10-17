@@ -30,7 +30,8 @@ public class TableData {
         this.tableInfo = tableInfo;
     }
 
-    public boolean parseTableField(Messager console) {
+    /** Stops at the first error: later checks read the maps the earlier fields filled. */
+    public void parseTableField(Messager console) throws EmptyProcessingException {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(tableInfo.tableClassEle, fields);
 
@@ -42,13 +43,12 @@ public class TableData {
                 addDependency(providerClassPath);
             }
 
-            if (info.parseColumnCheck(console))
-                return true;
+            info.parseColumnCheck(console);
 
             tableFields.put(field.getSimpleName().toString(), info);
             if (tableColumns.containsKey(info.columnName)) {
                 console.printMessage(ERROR, "Duplicate column name found: " + info.columnName, field);
-                return true;
+                throw new EmptyProcessingException();
             }
             tableColumns.put(info.columnName, info);
 
@@ -72,7 +72,7 @@ public class TableData {
             AnnotationMirror uniqueConstraintMirror = getAnnotationMirrorFromValue(uniqueConstraints.get(index));
             if (uniqueConstraint.columnNames().length == 0 && uniqueConstraint.fieldNames().length == 0) {
                 console.printMessage(ERROR, "Unique constraint must define at least one column or field", tableInfo.tableClassEle, uniqueConstraintMirror);
-                return true;
+                throw new EmptyProcessingException();
             }
             List<ColumnInfo> uniqueKey = new ArrayList<>();
             // Fet unique constraint column by field name
@@ -81,7 +81,7 @@ public class TableData {
                 if (columnInfo == null) {
                     AnnotationValue field = getAnnotationValue(uniqueConstraintMirror, "fieldNames");
                     console.printMessage(ERROR, "Field '" + name + "' not exist in table '" + tableInfo.classPath + "'", tableInfo.tableClassEle, uniqueConstraintMirror, field);
-                    return true;
+                    throw new EmptyProcessingException();
                 }
                 uniqueKey.add(columnInfo);
             }
@@ -90,7 +90,7 @@ public class TableData {
                 if (!this.tableColumns.containsKey(name)) {
                     AnnotationValue column = getAnnotationValue(uniqueConstraintMirror, "columnNames");
                     console.printMessage(ERROR, "Column '" + name + "' not exist in table: " + tableInfo.name, tableInfo.tableClassEle, uniqueConstraintMirror, column);
-                    return true;
+                    throw new EmptyProcessingException();
                 }
                 for (ColumnInfo columnInfo : this.tableFields.values()) {
                     if (!columnInfo.columnName.equals(name)) continue;
@@ -101,11 +101,10 @@ public class TableData {
             uniqueKeyList.add(uniqueKey);
             index++;
         }
-
-        return false;
     }
 
-    public boolean parseRepoMethods(TableData tableData, Types types, Messager console) {
+    /** Every method is parsed, so each bad one reports; throws after the last when any failed. */
+    public void parseRepoMethods(TableData tableData, Types types, Messager console) throws EmptyProcessingException {
         Map<String, ExecutableElement> methods = new LinkedHashMap<>();
         extractClassMethods(tableInfo.repoIntClassElement, methods);
 
@@ -121,8 +120,8 @@ public class TableData {
             }
             interfaceMethodInfo.add(methodInfo);
         }
-
-        return error;
+        if (error)
+            throw new EmptyProcessingException();
     }
 
     public void addDependency(String classPath) {

@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.processor.emit;
 
 import com.wavjaby.jdbc.annotation.JoinColumn;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.MethodInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
@@ -17,7 +18,7 @@ import static com.wavjaby.jdbc.processor.emit.PostgresDialect.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {
-    public static boolean generateCreateViewSql(ResolvedTable view, StringBuilder builder, Messager console) {
+    public static void generateCreateViewSql(ResolvedTable view, StringBuilder builder) {
         TableData tableData = view.table;
         TableInfo tableInfo = tableData.tableInfo;
         TableData base = view.viewBase;
@@ -82,11 +83,9 @@ public class SqlGenerator {
         builder.append("    FROM ").append(quoteTable(base.tableInfo)).append(" ").append(baseTableShortName);
         builder.append(joinSql);
         builder.append(";");
-
-        return false;
     }
 
-    public static boolean generateCreateTableSql(ResolvedTable table, StringBuilder builder, Messager console) {
+    public static void generateCreateTableSql(ResolvedTable table, StringBuilder builder, Messager console) throws EmptyProcessingException {
         TableData tableData = table.table;
         TableInfo tableInfo = tableData.tableInfo;
         builder.append("CREATE TABLE IF NOT EXISTS ").append(quoteTable(tableInfo)).append("(");
@@ -108,9 +107,13 @@ public class SqlGenerator {
                 builder.append(' ').append(columnInfo.column.columnDefinition());
             }
             // Auto create column define
-            else if (generateColumnDefinition(columnInfo, tableInfo, builder, console)) {
-                console.printMessage(ERROR, "Could not generate column definition for column: " + columnInfo.columnName, columnInfo.field);
-                return true;
+            else {
+                try {
+                    generateColumnDefinition(columnInfo, builder, console);
+                } catch (EmptyProcessingException e) {
+                    console.printMessage(ERROR, "Could not generate column definition for column: " + columnInfo.columnName, columnInfo.field);
+                    throw e;
+                }
             }
 
             // Apply default value
@@ -156,8 +159,6 @@ public class SqlGenerator {
         }
 
         builder.append("\n);");
-
-        return false;
     }
 
     private static String uniqueKeyName(TableInfo tableInfo, List<ColumnInfo> uniqueKey) {
@@ -174,19 +175,17 @@ public class SqlGenerator {
         builder.append(' ').append(clause).append(' ').append(action == JoinColumn.Action.CASCADE ? "CASCADE" : "SET NULL");
     }
 
-    private static boolean generateColumnDefinition(ColumnInfo columnInfo, TableInfo tableInfo, StringBuilder tableCreateSql, Messager console) {
+    private static void generateColumnDefinition(ColumnInfo columnInfo, StringBuilder tableCreateSql, Messager console) throws EmptyProcessingException {
         VariableElement field = columnInfo.field;
         TypeMirror type = field.asType();
         String columnType = columnType(type, columnInfo);
         if (columnType == null) {
             console.printMessage(ERROR, "Unknown SQL type for: " + field.asType().toString(), field);
-            return true;
+            throw new EmptyProcessingException();
         }
 
         // column type
         tableCreateSql.append(' ').append(columnType);
-
-        return false;
     }
 
     public static StringBuilder sqlResultModifier(MethodInfo methodInfo) {

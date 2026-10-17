@@ -1,5 +1,7 @@
 package com.wavjaby.jdbc.processor.util;
 
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
+
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
@@ -27,19 +29,16 @@ public class ProcessorUtil {
         return result.toString(StandardCharsets.UTF_8);
     }
 
-    public static boolean copyUtilityClasses(ProcessingEnvironment processingEnv, Messager console) {
+    public static void copyUtilityClasses(ProcessingEnvironment processingEnv, Messager console) throws EmptyProcessingException {
         String[] utilityClasses = {
                 "IdentifierGenerator", "Snowflake", "FastRowMapper", "StringConverter", "FastResultSetExtractor"
         };
 
-        for (String className : utilityClasses) {
-            if (copyUtilityClass(processingEnv, console, className))
-                return true;
-        }
-        return false;
+        for (String className : utilityClasses)
+            copyUtilityClass(processingEnv, console, className);
     }
 
-    public static boolean copyUtilityClass(ProcessingEnvironment processingEnv, Messager console, String className) {
+    public static void copyUtilityClass(ProcessingEnvironment processingEnv, Messager console, String className) throws EmptyProcessingException {
         String classPackage = "com.wavjaby.jdbc.util";
         String path = '/' + classPackage.replace('.', '/') + '/' + className + ".java";
         String classPath = classPackage + '.' + className;
@@ -47,7 +46,7 @@ public class ProcessorUtil {
         try (InputStream inputStream = ProcessorUtil.class.getResourceAsStream(path)) {
             if (inputStream == null) {
                 console.printMessage(ERROR, "Could not find utility class resource: " + className);
-                return true;
+                throw new EmptyProcessingException();
             }
             String sourceContent = getResourceAsString(inputStream);
             sourceContent = sourceContent.replace("package com.wavjaby.persistence;", "package com.wavjaby.jdbc.annotation;");
@@ -58,13 +57,11 @@ public class ProcessorUtil {
                 out.write(sourceContent);
             } catch (IOException e) {
                 console.printMessage(ERROR, "Could not write utility class: '" + classPath + "'");
-                return true;
+                throw new EmptyProcessingException();
             }
         } catch (IOException e) {
             console.printMessage(ERROR, "Error copying utility class " + className + ": " + e.getMessage());
-            return true;
+            throw new EmptyProcessingException();
         }
-
-        return false;
     }
 }

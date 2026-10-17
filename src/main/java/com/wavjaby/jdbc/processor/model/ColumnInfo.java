@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.annotation.*;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.AnnotationMirror;
@@ -144,27 +145,26 @@ public class ColumnInfo {
         this.nullable = nullable;
     }
 
-    public boolean parseColumnCheck(Messager console) {
+    public void parseColumnCheck(Messager console) throws EmptyProcessingException {
         if (isArray && !(type instanceof DeclaredType)) {
             console.printMessage(ERROR, "Primitive array is not supported: " + field.asType().toString() + ", use List or DeclaredType array instead.", field);
-            return true;
+            throw new EmptyProcessingException();
         }
 
         if (joinColumn != null) {
             if (joinColumn.referencedColumnName().isEmpty() && joinColumn.referencedClassFieldName().isEmpty()) {
                 console.printMessage(ERROR, "Least one of referencedColumnName and referencedFieldName should be provided for '@JoinTable'", field);
-                return true;
+                throw new EmptyProcessingException();
             }
             if (!joinColumn.referencedColumnName().isEmpty() && !joinColumn.referencedClassFieldName().isEmpty()) {
                 console.printMessage(ERROR, "Only one of referencedColumnName and referencedFieldName can be provided for '@JoinTable'", field);
-                return true;
+                throw new EmptyProcessingException();
             }
             if (referencedTableClassPath == null) {
                 console.printMessage(ERROR, "Field with @JoinColumn should assign referenced table class", field);
-                return true;
+                throw new EmptyProcessingException();
             }
         }
-        return false;
     }
 
     private String getColumnName(Element field) {

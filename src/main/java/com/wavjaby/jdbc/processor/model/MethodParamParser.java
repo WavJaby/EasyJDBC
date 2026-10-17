@@ -33,8 +33,7 @@ public class MethodParamParser {
         this.batchInsert = true;
         this.insertMethod = true;
 
-        if (addElement(parameter, parameterName))
-            throw new EmptyProcessingException();
+        addElement(parameter, parameterName);
     }
 
     public MethodParamParser(List<? extends VariableElement> methodParams, TableData tableData, CustomSql customSql, boolean insertMethod, Messager console) throws EmptyProcessingException {
@@ -45,17 +44,20 @@ public class MethodParamParser {
         this.batchInsert = false;
         this.insertMethod = insertMethod;
 
+        // Every parameter is checked so each bad one reports
         boolean error = false;
         for (VariableElement parameter : methodParams) {
-            String parameterName = parameter.getSimpleName().toString();
-            if (addElement(parameter, parameterName))
+            try {
+                addElement(parameter, parameter.getSimpleName().toString());
+            } catch (EmptyProcessingException e) {
                 error = true;
+            }
         }
         if (error)
             throw new EmptyProcessingException();
     }
 
-    private boolean addElement(Element parameter, String parameterName) {
+    private void addElement(Element parameter, String parameterName) throws EmptyProcessingException {
         TypeMirror parameterType = parameter.asType();
 
         // Custom param name
@@ -65,11 +67,11 @@ public class MethodParamParser {
 
         if (updateData != null && (fieldName != null || where != null)) {
             console.printMessage(ERROR, "@UpdateData can not use with @FieldName or @Where annotation", parameter, getAnnotationMirror(parameter, UpdateData.class));
-            return true;
+            throw new EmptyProcessingException();
         }
         if (fieldName != null && where != null) {
             console.printMessage(ERROR, "@Where can not use with @FieldName annotation", parameter, getAnnotationMirror(parameter, Where.class));
-            return true;
+            throw new EmptyProcessingException();
         }
 
         // Process class data
@@ -77,15 +79,16 @@ public class MethodParamParser {
                 !declaredType.asElement().getKind().equals(ElementKind.ENUM) &&
                 !declaredType.toString().startsWith("java.")) {
             TypeElement typeElement = (TypeElement) declaredType.asElement();
-            return addClassFieldsColumn(typeElement, parameterName, parameter);
+            addClassFieldsColumn(typeElement, parameterName, parameter);
+            return;
         }
 
         String columnFieldName = fieldName != null && !fieldName.value().trim().isEmpty()
                 ? fieldName.value().trim() : parameterName;
-        return addParamColumn(parameterType, parameterName, columnFieldName, where, parameter);
+        addParamColumn(parameterType, parameterName, columnFieldName, where, parameter);
     }
 
-    private boolean addClassFieldsColumn(TypeElement classType, String paramName, Element parameter) {
+    private void addClassFieldsColumn(TypeElement classType, String paramName, Element parameter) throws EmptyProcessingException {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(classType, fields);
 
@@ -98,7 +101,9 @@ public class MethodParamParser {
 
             ColumnInfo column = tableData.tableFields.get(fieldName);
 
-            if (checkFieldTypeAndName(fieldType, fieldName, parameter, paramName, classType, column, console)) {
+            try {
+                checkFieldTypeAndName(fieldType, fieldName, parameter, paramName, classType, column, console);
+            } catch (EmptyProcessingException e) {
                 error = true;
                 continue;
             }
@@ -109,12 +114,12 @@ public class MethodParamParser {
 
             columns.add(column);
         }
-        MethodParamInfo methodParamInfo = new MethodParamInfo(parameter, columns, getTypeName(classType.asType()), paramName, true, null, false);
-        addParamAndCheckConflict(methodParamInfo);
-        return error;
+        params.add(new MethodParamInfo(parameter, columns, getTypeName(classType.asType()), paramName, true, null, false));
+        if (error)
+            throw new EmptyProcessingException();
     }
 
-    private boolean addParamColumn(TypeMirror parameterType, String paramName, String columnFieldName, Where where, Element parameter) {
+    private void addParamColumn(TypeMirror parameterType, String paramName, String columnFieldName, Where where, Element parameter) throws EmptyProcessingException {
         List<ColumnInfo> columns = new ArrayList<>();
 
         boolean error = false;
@@ -130,7 +135,9 @@ public class MethodParamParser {
             if (column == null && customSqlParam)
                 continue;
 
-            if (checkFieldTypeAndName(parameterType.toString(), fieldName, parameter, paramName, null, column, console)) {
+            try {
+                checkFieldTypeAndName(parameterType.toString(), fieldName, parameter, paramName, null, column, console);
+            } catch (EmptyProcessingException e) {
                 error = true;
                 continue;
             }
@@ -147,26 +154,19 @@ public class MethodParamParser {
 
             columns.add(column);
         }
-        if (error) return true;
+        if (error)
+            throw new EmptyProcessingException();
 
-
-        MethodParamInfo methodParamInfo = new MethodParamInfo(parameter, columns, getTypeName(parameterType), paramName, false, where, customSqlParam);
-
-        return addParamAndCheckConflict(methodParamInfo);
+        params.add(new MethodParamInfo(parameter, columns, getTypeName(parameterType), paramName, false, where, customSqlParam));
     }
 
-    private boolean addParamAndCheckConflict(MethodParamInfo methodParamInfo) {
-        params.add(methodParamInfo);
-        return false;
-    }
-
-    private boolean checkFieldTypeAndName(String parameterType, String fieldName, Element parameter, String paramName, TypeElement classType, ColumnInfo column, Messager console) {
+    private void checkFieldTypeAndName(String parameterType, String fieldName, Element parameter, String paramName, TypeElement classType, ColumnInfo column, Messager console) throws EmptyProcessingException {
 //        if (classType != null)
 //            fieldName = classType.asType() + "::" + fieldName;
 
         // field for column exist and type is same
         if (column != null && column.field.getSimpleName().toString().equals(fieldName)) {
-            return false;
+            return;
         }
 
         String inClass = classType != null ? "(in class: '" + classType.asType().toString() + "', parameter: '" + paramName + "')" : "";
@@ -180,7 +180,7 @@ public class MethodParamParser {
                     "Parameter type '" + parameterType + "'" + inClass + " does not match field type '" + column.field.asType().toString() +
                             "' for column '" + column.columnName + "' in table '" + tableData.tableInfo.classPath + "'", parameter);
         }
-        return true;
+        throw new EmptyProcessingException();
     }
 
     public static String getTypeName(TypeMirror typeMirror) {

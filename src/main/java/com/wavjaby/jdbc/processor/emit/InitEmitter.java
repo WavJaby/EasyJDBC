@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.processor.emit;
 
 import com.squareup.javapoet.*;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.resolve.ResolvedTable;
@@ -34,15 +35,14 @@ public class InitEmitter {
         this.filer = filer;
     }
 
-    /** True on error, already reported. */
-    public boolean emit(Map<String, TableData> tableDataMap, Map<String, ResolvedTable> resolvedTables) {
+    public void emit(Map<String, TableData> tableDataMap, Map<String, ResolvedTable> resolvedTables) throws EmptyProcessingException {
         Map<String, ResolvedTable> tableDependency = new LinkedHashMap<>();
         for (ResolvedTable table : resolvedTables.values())
             processTableDependency(table, resolvedTables, tableDependency);
-        return generateInitFile(tableDataMap, tableDependency);
+        generateInitFile(tableDataMap, tableDependency);
     }
 
-    private boolean generateInitFile(Map<String, TableData> tableDataMap, Map<String, ResolvedTable> tableDependency) {
+    private void generateInitFile(Map<String, TableData> tableDataMap, Map<String, ResolvedTable> tableDependency) throws EmptyProcessingException {
         String classPackage = "com.wavjaby.jdbc.util";
         String className = "RepositoryInit";
 
@@ -103,13 +103,10 @@ public class InitEmitter {
         });
         for (ResolvedTable table : tables) {
             StringBuilder tableCreateSql = new StringBuilder();
-            if (table.table.tableInfo.isVirtual) {
-                if (SqlGenerator.generateCreateViewSql(table, tableCreateSql, console))
-                    return true;
-            } else {
-                if (SqlGenerator.generateCreateTableSql(table, tableCreateSql, console))
-                    return true;
-            }
+            if (table.table.tableInfo.isVirtual)
+                SqlGenerator.generateCreateViewSql(table, tableCreateSql);
+            else
+                SqlGenerator.generateCreateTableSql(table, tableCreateSql, console);
             initSchemeAndTable.addStatement("jdbc.execute(\"\"\"\n$L\"\"\")", tableCreateSql);
         }
 
@@ -144,10 +141,8 @@ public class InitEmitter {
                     .writeTo(filer);
         } catch (IOException e) {
             console.printMessage(ERROR, "Could not write class: '" + classPackage + "." + className + "'");
-            return true;
+            throw new EmptyProcessingException();
         }
-
-        return false;
     }
 
     // Post-order: every table or view lands after the ones its DDL names

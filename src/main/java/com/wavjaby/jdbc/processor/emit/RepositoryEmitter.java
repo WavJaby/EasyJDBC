@@ -1,6 +1,7 @@
 package com.wavjaby.jdbc.processor.emit;
 
 import com.squareup.javapoet.*;
+import com.wavjaby.jdbc.processor.EmptyProcessingException;
 import com.wavjaby.jdbc.processor.model.*;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,12 +36,11 @@ public class RepositoryEmitter {
         this.elementUtils = elementUtils;
     }
 
-    /** True on error, already reported. */
-    public boolean emit(TableData tableData) {
-        return generateFile(tableData);
+    public void emit(TableData tableData) throws EmptyProcessingException {
+        generateFile(tableData);
     }
 
-    private boolean generateFile(TableData tableData) {
+    private void generateFile(TableData tableData) throws EmptyProcessingException {
         TableInfo tableInfo = tableData.tableInfo;
 
         // Create class Builder
@@ -104,8 +104,7 @@ public class RepositoryEmitter {
         typeBuilder.addMethod(constructorBuilder.build());
 
         // Add repository method
-        if (generateRepositoryMethods(tableData, typeBuilder, projectionMappers))
-            return true;
+        generateRepositoryMethods(tableData, typeBuilder, projectionMappers);
 
         try {
             JavaFile.builder(tableInfo.classPackagePath, typeBuilder.build())
@@ -113,9 +112,8 @@ public class RepositoryEmitter {
                     .writeTo(filer);
         } catch (IOException e) {
             console.printMessage(ERROR, "Could not write class: '" + tableInfo.repoClassPath + "'. Error: " + e);
-            return true;
+            throw new EmptyProcessingException();
         }
-        return false;
     }
 
 
@@ -138,9 +136,9 @@ public class RepositoryEmitter {
         return fields;
     }
 
-    private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder, Map<String, String> projectionMappers) {
+    private void generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder, Map<String, String> projectionMappers) throws EmptyProcessingException {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
-            boolean error = switch (method.operation) {
+            switch (method.operation) {
                 case INSERT -> generateRepositoryInsertMethod(method, tableData, typeBuilder);
                 case UPDATE -> generateRepositoryUpdateMethod(method, tableData, typeBuilder, false);
                 case UPDATE_CHECKED -> generateRepositoryUpdateMethod(method, tableData, typeBuilder, true);
@@ -150,16 +148,13 @@ public class RepositoryEmitter {
                 case SELECT_ROWS -> generateRepositorySearchMethod(method, tableData, typeBuilder);
                 case SELECT_PROJECTION -> generateRepositoryProjectionMethod(method, tableData, typeBuilder,
                         projectionMappers.get(method.returns.projection().type().getQualifiedName().toString()));
-                case SELECT_COLUMN ->generateRepositorySearchColumnMethod(method, tableData, typeBuilder);
-            };
-            if (error)
-                return true;
+                case SELECT_COLUMN -> generateRepositorySearchColumnMethod(method, tableData, typeBuilder);
+            }
         }
-        return false;
     }
 
 
-    private boolean generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositoryInsertMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         boolean returnInt = methodInfo.returnTypeMirror.getKind() == TypeKind.INT;
         TableInfo tableInfo = tableData.tableInfo;
 
@@ -205,11 +200,10 @@ public class RepositoryEmitter {
         }
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
 
-    private boolean generateRepositoryCheckMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositoryCheckMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -221,10 +215,9 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, true);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
-    private boolean generateRepositoryCountMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositoryCountMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -236,10 +229,9 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcQueryObject(methodBuilder, sql, queryWithArgs.args(), int.class, false);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
-    private boolean generateRepositorySearchColumnMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositorySearchColumnMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -281,11 +273,10 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, null);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
     // Same as a row search, but SELECTs only the projection's columns, in component order -- the extractor fills the constructor by position
-    private boolean generateRepositoryProjectionMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, String mapperField) {
+    private void generateRepositoryProjectionMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, String mapperField) {
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
 
         JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.where(methodInfo.params, methodInfo);
@@ -301,10 +292,9 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), mapperField);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
-    private boolean generateRepositorySearchMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositorySearchMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -324,11 +314,10 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), TABLE_MAPPER);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
 
-    private boolean generateRepositoryDeleteMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
+    private void generateRepositoryDeleteMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder) {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -340,10 +329,9 @@ public class RepositoryEmitter {
         JdbcCodeGenerator.buildJdbcUpdate(methodBuilder, sql, queryWithArgs.args(), methodInfo.returnTypeMirror);
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
-    private boolean generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) {
+    private void generateRepositoryUpdateMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, boolean checkSuccess) throws EmptyProcessingException {
         TableInfo tableInfo = tableData.tableInfo;
 
         MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
@@ -357,7 +345,7 @@ public class RepositoryEmitter {
             else {
                 if (!param.dataClass && param.columns.size() > 1) {
                     console.printMessage(ERROR, "Multiple column for value", param.parameter);
-                    return true;
+                    throw new EmptyProcessingException();
                 }
                 updateColumns.add(param);
             }
@@ -395,10 +383,9 @@ public class RepositoryEmitter {
         }
 
         typeBuilder.addMethod(methodBuilder.build());
-        return false;
     }
 
-    private boolean generateClassDependencies(TableInfo tableInfo, TableData tableData, TypeSpec.Builder typeBuilder, MethodSpec.Builder constructorBuilder) {
+    private void generateClassDependencies(TableInfo tableInfo, TableData tableData, TypeSpec.Builder typeBuilder, MethodSpec.Builder constructorBuilder) {
         // Create field defamation
         for (Map.Entry<String, String> dependency : tableData.getDependencies().entrySet()) {
             String fullClassName = dependency.getKey();
@@ -414,7 +401,6 @@ public class RepositoryEmitter {
                 constructorBuilder.addStatement("this.$N = $N", fieldName, fieldName);
             }
         }
-        return false;
     }
 
 }

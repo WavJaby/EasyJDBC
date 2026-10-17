@@ -51,6 +51,10 @@ public class TableProcessor extends AbstractProcessor {
         this.filer = processingEnv.getFiler();
     }
 
+    /**
+     * Errors print a diagnostic, then throw EmptyProcessingException up to where the round decides how far to go on.
+     * Parse stops the round at the first bad table; resolve and repository emit go on through every table, so each reports, then stop the round.
+     */
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         try {
@@ -62,30 +66,32 @@ public class TableProcessor extends AbstractProcessor {
             for (TypeElement annotation : annotations) {
                 for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
                     TableData tableData = parseTableData((TypeElement) element);
-                    if (tableData == null) return false;
                     tableDataMap.put(tableData.tableInfo.classPath, tableData);
                 }
             }
 
             Map<String, ResolvedTable> resolvedTables = Resolver.resolve(tableDataMap, console);
-            if (resolvedTables == null)
-                return false;
 
             RepositoryEmitter repositoryEmitter = new RepositoryEmitter(console, filer, elementUtils);
-            boolean allSuccess = true;
-            for (TableData tableData : tableDataMap.values())
-                if (repositoryEmitter.emit(tableData)) allSuccess = false;
-            if (!allSuccess)
+            boolean error = false;
+            for (TableData tableData : tableDataMap.values()) {
+                try {
+                    repositoryEmitter.emit(tableData);
+                } catch (EmptyProcessingException e) {
+                    error = true;
+                }
+            }
+            if (error)
                 return false;
 
-            if (new InitEmitter(console, filer).emit(tableDataMap, resolvedTables))
-                return false;
+            new InitEmitter(console, filer).emit(tableDataMap, resolvedTables);
 
-            if (ProcessorUtil.copyUtilityClasses(processingEnv, console))
-                return false;
+            ProcessorUtil.copyUtilityClasses(processingEnv, console);
 
             System.out.println("RepositoryTemplate process done " + tableDataMap.size());
             return true;
+        } catch (EmptyProcessingException e) {
+            return false;
         } catch (Exception e) {
             // An ERROR fails the build; returning false alone left the build green with nothing generated.
             // Full trace -> stderr; the diagnostic names the processor method that failed (the top frame is usually JDK code), no line number so it stays stable across edits
@@ -101,36 +107,34 @@ public class TableProcessor extends AbstractProcessor {
         }
     }
 
-    private TableData parseTableData(TypeElement element) {
+    private TableData parseTableData(TypeElement element) throws EmptyProcessingException {
         // Get table repository class
         AnnotationMirror tableMirror = getAnnotationMirror(element, Table.class);
         assert tableMirror != null;
         TypeElement repoInterfaceClass = (TypeElement) getAnnotationValueClassElement(tableMirror, "repositoryClass");
         if (repoInterfaceClass == null) {
             console.printMessage(ERROR, "The 'repositoryClass' is not given", element);
-            return null;
+            throw new EmptyProcessingException();
         }
         TypeElement virtualBaseClass = (TypeElement) getAnnotationValueClassElement(tableMirror, "virtualBaseClass");
 
         // Get table definition class name
         TableInfo tableInfo = new TableInfo(element, repoInterfaceClass, virtualBaseClass);
         TableData tableData = new TableData(tableInfo);
-        if (tableData.parseTableField(console))
-            return null;
+        tableData.parseTableField(console);
 
         // Virtual table check
         if (tableInfo.isVirtual) {
             if (virtualBaseClass == null) {
                 console.printMessage(ERROR, "Virtual table 'virtualBaseClass' is not given", element);
-                return null;
+                throw new EmptyProcessingException();
             }
             if (tableData.tableFields.isEmpty()) {
                 console.printMessage(ERROR, "Virtual table '" + tableInfo.name + "' must have at least one field", element);
             }
         }
 
-        if (tableData.parseRepoMethods(tableData, typeUtils, console))
-            return null;
+        tableData.parseRepoMethods(tableData, typeUtils, console);
 
         return tableData;
     }
