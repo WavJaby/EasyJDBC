@@ -3,12 +3,14 @@ package com.wavjaby.jdbc.processor.model;
 import com.wavjaby.jdbc.annotation.*;
 import com.wavjaby.jdbc.annotation.conf.Direction;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
+import com.wavjaby.jdbc.processor.TableProcessor;
 import com.wavjaby.jdbc.processor.util.MethodParamParser;
 import org.jspecify.annotations.NonNull;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
 import javax.lang.model.type.*;
+import javax.lang.model.util.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,7 +57,7 @@ public class MethodInfo {
 
     /** What the generated method does. Decided once here, so a method shape no operation accepts is a parse error and emit only switches. */
     public enum Operation {
-        INSERT, UPDATE, UPDATE_CHECKED, DELETE, COUNT, EXISTS, SELECT_ROWS, SELECT_COLUMN
+        INSERT, UPDATE, UPDATE_CHECKED, DELETE, COUNT, EXISTS, SELECT_ROWS, SELECT_PROJECTION, SELECT_COLUMN
     }
 
     public final Operation operation;
@@ -97,7 +99,7 @@ public class MethodInfo {
         this.operation = initOperation(console);
     }
 
-    // First match wins, in this order: column SQL, batch insert, delete, primitive return, void return, row return, single column
+    // First match wins, in this order: column SQL, batch insert, delete, primitive return, void return, row return, projection, single column
     private Operation initOperation(Messager console) throws EmptyProcessingException {
         if (returns.column().columnSqlParams() != null)
             return Operation.SELECT_COLUMN;
@@ -143,6 +145,15 @@ public class MethodInfo {
                 return modifyRow ? Operation.UPDATE : Operation.INSERT;
             }
             return Operation.SELECT_ROWS;
+        }
+
+        if (returns.projection() != null) {
+            if (modifyRow || insertMethod) {
+                console.printMessage(ERROR, "Projection return '" + returns.typeName() + "' is for queries only; " + (modifyRow ? "update" : "insert") +
+                        " returns the table class, a count or nothing", method);
+                throw new EmptyProcessingException();
+            }
+            return Operation.SELECT_PROJECTION;
         }
 
         // initReturnInfo only lets any other shape through with a @Select field or column SQL, and column SQL matched first
@@ -308,50 +319,65 @@ public class MethodInfo {
             return new ReturnColumn(null, null);
     }
 
+    /** A record returned instead of the table: one column per component, in component order. */
+    public record Projection(TypeElement type, List<ColumnInfo> columns) {
+    }
+
     public record ReturnInfo(
             @NonNull
             ReturnColumn column,
             boolean table,
             boolean list,
-            String typeName) {
+            String typeName,
+            Projection projection) {
 
+        ReturnInfo(ReturnColumn column, boolean table, boolean list, String typeName) {
+            this(column, table, list, typeName, null);
+        }
     }
 
+    /**
+     * A declared return type is, per row (the List element when it is a List): the table class, a projection record, or a single-column type that names its column with @Select.
+     * A supertype of the table is refused: the generated List of the table class is not assignable to a List of the supertype.
+     */
     private static ReturnInfo initReturnInfo(Select select, CustomSqlRaw customSql, TypeMirror returnTypeMirror, TableData tableData, List<MethodParamInfo> params, ExecutableElement method, Messager console) throws EmptyProcessingException {
         ReturnColumn returnColumn = initReturnColumn(select, customSql.column, tableData, params, method, console);
 
         if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
-            TypeElement returnTypeElement = (TypeElement) declaredReturnType.asElement();
-            String returnTypeClassPath = declaredReturnType.asElement().toString();
-            // Check if return table itself or subclass of table class
-            if (returnTypeClassPath.equals(tableData.tableInfo.classPath) ||
-                    checkInstanceof(tableData.tableInfo.tableClassEle, returnTypeElement)) {
+            boolean list = declaredReturnType.asElement().toString().equals(List.class.getName());
+            TypeMirror rowType = list ? declaredReturnType.getTypeArguments().get(0) : returnTypeMirror;
+            TypeElement rowElement = rowType instanceof DeclaredType declaredRowType ? (TypeElement) declaredRowType.asElement() : null;
+
+            if (rowElement != null && rowElement.toString().equals(tableData.tableInfo.classPath)) {
                 if (!returnColumn.isNull()) {
                     printError(console, method, Select.class, "Return with table class must not use @Select");
                     throw new EmptyProcessingException();
                 }
-
-                return new ReturnInfo(returnColumn, true, false, tableData.tableInfo.className);
+                return new ReturnInfo(returnColumn, true, list, tableData.tableInfo.className);
             }
 
-            // Check if return type is List
-            if (returnTypeClassPath.equals(List.class.getName())) {
-                TypeMirror genericSuperType = declaredReturnType.getTypeArguments().get(0);
-                // Check generic type is valid
-                if (genericSuperType.toString().equals(tableData.tableInfo.classPath)) {
-                    if (!returnColumn.isNull()) {
-                        printError(console, method, Select.class, "Return with table class must not use @Select");
-                        throw new EmptyProcessingException();
-                    }
-                    return new ReturnInfo(returnColumn, true, true, tableData.tableInfo.className);
-                } else if (!returnColumn.isNull()) {
-                    return new ReturnInfo(returnColumn, false, true, getTypeName(genericSuperType));
+            if (rowElement != null && checkInstanceof(tableData.tableInfo.tableClassEle, rowElement)) {
+                console.printMessage(ERROR, "Return type '" + rowType + "' is a supertype of table class '" + tableData.tableInfo.classPath +
+                        "': return the table class itself, or a projection record of the columns needed", method);
+                throw new EmptyProcessingException();
+            }
+
+            if (rowElement != null && rowElement.getKind() == ElementKind.RECORD && !rowElement.toString().startsWith("java.")) {
+                if (!returnColumn.isNull()) {
+                    printError(console, method, Select.class, "Projection record '" + rowElement + "' selects the columns its components name: remove @Select");
+                    throw new EmptyProcessingException();
                 }
+                Projection projection = initProjection(rowElement, tableData, method, console);
+                return new ReturnInfo(returnColumn, false, list, getTypeName(rowType), projection);
             }
-            // Check if return column
-            else if (!returnColumn.isNull()) {
-                return new ReturnInfo(returnColumn, false, false, getTypeName(returnTypeMirror));
+
+            if (returnColumn.isNull()) {
+                console.printMessage(ERROR, "Return type '" + rowType + "' is a single column: name it with @Select(field = ...) or @Select(columnSql = ...); " +
+                        "to return rows, return the table class or a projection record", method);
+                throw new EmptyProcessingException();
             }
+            checkColumnReturnType(returnColumn, rowType, returnTypeMirror, method, console);
+            return new ReturnInfo(returnColumn, false, list, getTypeName(rowType));
         } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
             if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
                 return new ReturnInfo(returnColumn, false, false, "boolean");
@@ -367,6 +393,7 @@ public class MethodInfo {
 
             // Only allow when return field is used
             if (!returnColumn.isNull()) {
+                checkColumnReturnType(returnColumn, returnTypeMirror, returnTypeMirror, method, console);
                 return new ReturnInfo(returnColumn, false, false, getTypeName(returnTypeMirror));
             } else {
                 console.printMessage(ERROR, "Return with array type must use returnField, to query multiple objects, use List<>", method);
@@ -380,6 +407,63 @@ public class MethodInfo {
                 "' for table class '" + tableData.tableInfo.classPath +
                 "', method: '" + method.toString() + "' return type '" + returnTypeMirror + "' is not acceptable", method);
         throw new EmptyProcessingException();
+    }
+
+    // Every component must be a table field of the same type; the row mapper fills constructor parameters by position, so SELECT follows component order
+    private static Projection initProjection(TypeElement record, TableData tableData, ExecutableElement method, Messager console) throws EmptyProcessingException {
+        Types types = TableProcessor.getTypeUtils();
+        List<? extends RecordComponentElement> components = record.getRecordComponents();
+        List<ColumnInfo> columns = new ArrayList<>(components.size());
+        boolean error = false;
+        for (RecordComponentElement component : components) {
+            String name = component.getSimpleName().toString();
+            ColumnInfo column = tableData.tableFields.get(name);
+            if (column == null) {
+                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "' is not a field of table '" + tableData.tableInfo.classPath + "'", method);
+                error = true;
+                continue;
+            }
+            if (!types.isSameType(component.asType(), column.field.asType())) {
+                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "' is '" + component.asType() +
+                        "' but the field is '" + column.field.asType() + "' in table '" + tableData.tableInfo.classPath + "'", method);
+                error = true;
+                continue;
+            }
+            columns.add(column);
+        }
+
+        // FastRowMapper takes the first public constructor whose arity equals the field count, and getConstructors() has no defined order
+        long sameArity = record.getEnclosedElements().stream()
+                .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR && e.getModifiers().contains(Modifier.PUBLIC))
+                .filter(e -> ((ExecutableElement) e).getParameters().size() == components.size())
+                .count();
+        if (sameArity > 1) {
+            console.printMessage(ERROR, "Projection '" + record + "' has " + sameArity + " public constructors taking " + components.size() +
+                    " parameters; the row mapper would pick one arbitrarily -- keep only the canonical constructor at that arity", method);
+            error = true;
+        }
+
+        if (error)
+            throw new EmptyProcessingException();
+        return new Projection(record, columns);
+    }
+
+    // A @Select(field) column reads as the field's type. The List form is ambiguous on purpose: per row (List<String> of a String field) or the field itself (List<String> of a List<String> field)
+    private static void checkColumnReturnType(ReturnColumn returnColumn, TypeMirror rowType, TypeMirror returnType, ExecutableElement method, Messager console) throws EmptyProcessingException {
+        if (returnColumn.column() == null)
+            return; // columnSql: its type is whatever the SQL computes
+        Types types = TableProcessor.getTypeUtils();
+        TypeMirror fieldType = boxed(types, returnColumn.column().field.asType());
+        if (types.isSameType(boxed(types, rowType), fieldType) || types.isSameType(boxed(types, returnType), fieldType))
+            return;
+        AnnotationMirror mirror = getAnnotationMirror(method, Select.class);
+        console.printMessage(ERROR, "Return type '" + rowType + "' does not match field '" + returnColumn.column().field.getSimpleName() +
+                "' of type '" + returnColumn.column().field.asType() + "'", method, mirror, getAnnotationValue(mirror, "field"));
+        throw new EmptyProcessingException();
+    }
+
+    private static TypeMirror boxed(Types types, TypeMirror type) {
+        return type instanceof PrimitiveType primitive ? types.boxedClass(primitive).asType() : type;
     }
 
     private static boolean initCount(TypeMirror returnTypeMirror, ExecutableElement method, Messager console) throws EmptyProcessingException {

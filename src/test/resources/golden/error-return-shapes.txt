@@ -1,5 +1,3 @@
-=== diagnostics (4) ===
-ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getAllByAge(int)' return type 'java.util.List<fx.Named>' is not acceptable
-ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNameByAge(int)' return type 'java.lang.String' is not acceptable
-ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNameById(long)' return type 'fx.PersonName' is not acceptable
-ERROR PersonRepository.java: Repository 'fx' for table class 'fx.Person', method: 'getNamesByAge(int)' return type 'java.util.List<fx.PersonName>' is not acceptable
+=== diagnostics (2) ===
+ERROR PersonRepository.java: Return type 'fx.Named' is a supertype of table class 'fx.Person': return the table class itself, or a projection record of the columns needed
+ERROR PersonRepository.java: Return type 'java.lang.String' is a single column: name it with @Select(field = ...) or @Select(columnSql = ...); to return rows, return the table class or a projection record

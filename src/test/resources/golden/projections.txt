@@ -1,0 +1,84 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS person(
+            id BIGINT NOT NULL,
+            name VARCHAR,
+            age INTEGER NOT NULL,
+            email VARCHAR,
+            CONSTRAINT person_PK PRIMARY KEY(id)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/PersonRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class PersonRepositoryImpl implements PersonRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Person> tableMapper;
+
+  private final FastResultSetExtractor<PersonName> personNameMapper;
+
+  private final FastResultSetExtractor<Contact> contactMapper;
+
+  public PersonRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Person.class, 4);
+    personNameMapper = new FastResultSetExtractor<>(PersonName.class, 2);
+    contactMapper = new FastResultSetExtractor<>(Contact.class, 2);
+  }
+
+  @Override
+  public PersonName getNameById(long id) {
+    List<PersonName> result = jdbc.query("SELECT name,id FROM person WHERE id=?", personNameMapper, id);
+    return result.isEmpty() ? null : result.get(0);
+  }
+
+  @Override
+  public List<PersonName> getNamesByAge(int age) {
+    return jdbc.query("SELECT name,id FROM person WHERE age=? ORDER BY name ASC LIMIT 10", personNameMapper, age);
+  }
+
+  @Override
+  public List<Contact> getContactsByAge(int age) {
+    return jdbc.query("SELECT email,name FROM person WHERE age=?", contactMapper, age);
+  }
+}

@@ -27,6 +27,7 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.*;
 import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import java.io.IOException;
 import java.util.*;
 
@@ -43,6 +44,8 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 public class TableProcessor extends AbstractProcessor {
     private Messager console;
     private static Elements elementUtils;
+    private static Types typeUtils;
+    private static final String TABLE_MAPPER = "tableMapper";
     private Filer filer;
 
     @SuppressWarnings("unused")
@@ -53,12 +56,17 @@ public class TableProcessor extends AbstractProcessor {
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
         elementUtils = processingEnv.getElementUtils();
+        typeUtils = processingEnv.getTypeUtils();
         this.console = processingEnv.getMessager();
         this.filer = processingEnv.getFiler();
     }
 
     public static Elements getElementUtils() {
         return elementUtils;
+    }
+
+    public static Types getTypeUtils() {
+        return typeUtils;
     }
 
     @Override
@@ -290,9 +298,23 @@ public class TableProcessor extends AbstractProcessor {
         ParameterizedTypeName tableMapperType = ParameterizedTypeName.get(
                 ClassName.get(FastResultSetExtractor.class),
                 tableDataClass);
-        typeBuilder.addField(FieldSpec.builder(tableMapperType, "tableMapper")
+        typeBuilder.addField(FieldSpec.builder(tableMapperType, TABLE_MAPPER)
                 .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
                 .build());
+
+        // One extractor per projection record, shared by every method returning it
+        Map<String, MethodInfo.Projection> projections = new LinkedHashMap<>();
+        for (MethodInfo method : tableData.interfaceMethodInfo)
+            if (method.returns.projection() != null)
+                projections.putIfAbsent(method.returns.projection().type().getQualifiedName().toString(), method.returns.projection());
+        Map<String, String> projectionMappers = projectionMapperFields(projections.values(), tableData);
+        for (MethodInfo.Projection projection : projections.values()) {
+            ClassName projectionClass = ClassName.get(projection.type());
+            typeBuilder.addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(FastResultSetExtractor.class), projectionClass),
+                            projectionMappers.get(projection.type().getQualifiedName().toString()))
+                    .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                    .build());
+        }
 
         // Constructor
         MethodSpec.Builder constructorBuilder = MethodSpec.constructorBuilder()
@@ -304,15 +326,22 @@ public class TableProcessor extends AbstractProcessor {
         generateClassDependencies(tableInfo, tableData, typeBuilder, constructorBuilder);
 
         // Finish constructor
-        constructorBuilder.addStatement("tableMapper = new $T<>($T.class, $L)",
+        constructorBuilder.addStatement("$N = new $T<>($T.class, $L)",
+                TABLE_MAPPER,
                 FastResultSetExtractor.class,
                 tableDataClass,
                 tableData.tableColumns.size());
+        for (MethodInfo.Projection projection : projections.values())
+            constructorBuilder.addStatement("$N = new $T<>($T.class, $L)",
+                    projectionMappers.get(projection.type().getQualifiedName().toString()),
+                    FastResultSetExtractor.class,
+                    ClassName.get(projection.type()),
+                    projection.columns().size());
 
         typeBuilder.addMethod(constructorBuilder.build());
 
         // Add repository method
-        if (generateRepositoryMethods(tableData, typeBuilder))
+        if (generateRepositoryMethods(tableData, typeBuilder, projectionMappers))
             return true;
 
         try {
@@ -327,7 +356,26 @@ public class TableProcessor extends AbstractProcessor {
     }
 
 
-    private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder) {
+    // Projection qualified name -> extractor field name: simple name + "Mapper", suffixed when two projections or a dependency field would collide
+    private static Map<String, String> projectionMapperFields(Collection<MethodInfo.Projection> projections, TableData tableData) {
+        Set<String> taken = new HashSet<>(tableData.getDependencies().values());
+        taken.add("jdbc");
+        taken.add(TABLE_MAPPER);
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (MethodInfo.Projection projection : projections) {
+            TypeElement type = projection.type();
+            String qualifiedName = type.getQualifiedName().toString();
+            String simpleName = type.getSimpleName().toString();
+            String base = Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1) + "Mapper";
+            String name = base;
+            for (int i = 2; !taken.add(name); i++)
+                name = base + i;
+            fields.put(qualifiedName, name);
+        }
+        return fields;
+    }
+
+    private boolean generateRepositoryMethods(TableData tableData, TypeSpec.Builder typeBuilder, Map<String, String> projectionMappers) {
         for (MethodInfo method : tableData.interfaceMethodInfo) {
             boolean error = switch (method.operation) {
                 case INSERT -> generateRepositoryInsertMethod(method, tableData, typeBuilder);
@@ -337,7 +385,9 @@ public class TableProcessor extends AbstractProcessor {
                 case COUNT -> generateRepositoryCountMethod(method, tableData, typeBuilder);
                 case EXISTS -> generateRepositoryCheckMethod(method, tableData, typeBuilder);
                 case SELECT_ROWS -> generateRepositorySearchMethod(method, tableData, typeBuilder);
-                case SELECT_COLUMN -> generateRepositorySearchColumnMethod(method, tableData, typeBuilder);
+                case SELECT_PROJECTION -> generateRepositoryProjectionMethod(method, tableData, typeBuilder,
+                        projectionMappers.get(method.returns.projection().type().getQualifiedName().toString()));
+                case SELECT_COLUMN ->generateRepositorySearchColumnMethod(method, tableData, typeBuilder);
             };
             if (error)
                 return true;
@@ -469,7 +519,27 @@ public class TableProcessor extends AbstractProcessor {
 
         String sql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
-        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, false);
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, sqlArgs, null);
+
+        typeBuilder.addMethod(methodBuilder.build());
+        return false;
+    }
+
+    // Same as a row search, but SELECTs only the projection's columns, in component order -- the extractor fills the constructor by position
+    private boolean generateRepositoryProjectionMethod(MethodInfo methodInfo, TableData tableData, TypeSpec.Builder typeBuilder, String mapperField) {
+        MethodSpec.Builder methodBuilder = JdbcCodeGenerator.getClassDefinition(methodInfo);
+
+        JdbcCodeGenerator.QueryAndArgs queryWithArgs = JdbcCodeGenerator.getQueryAndArgs(methodInfo.params, methodInfo, false, false, "WHERE ", " AND ", false, tableData);
+
+        StringBuilder columnQuery = new StringBuilder();
+        for (ColumnInfo column : methodInfo.returns.projection().columns()) {
+            if (!columnQuery.isEmpty()) columnQuery.append(',');
+            columnQuery.append(quoteColumn(column.columnName));
+        }
+
+        String sql = "SELECT " + columnQuery + " FROM " + quoteTable(tableData.tableInfo) + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
+
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), mapperField);
 
         typeBuilder.addMethod(methodBuilder.build());
         return false;
@@ -492,7 +562,7 @@ public class TableProcessor extends AbstractProcessor {
 
         String sql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + queryWithArgs.query() + SqlGenerator.sqlResultModifier(methodInfo);
 
-        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), true);
+        JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, sql, queryWithArgs.args(), TABLE_MAPPER);
 
         typeBuilder.addMethod(methodBuilder.build());
         return false;
@@ -558,7 +628,7 @@ public class TableProcessor extends AbstractProcessor {
 
             String selectSql = "SELECT " + columnQuery + " FROM " + quoteTable(tableInfo) + where.query();
 
-            JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), true);
+            JdbcCodeGenerator.buildJdbcQueryReturn(methodBuilder, methodInfo, selectSql, where.args(), TABLE_MAPPER);
 
             methodBuilder.endControlFlow();
             methodBuilder.addStatement("return null");

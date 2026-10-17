@@ -213,7 +213,9 @@ public class JdbcCodeGenerator {
         }
     }
 
-    public static void buildJdbcQueryReturn(MethodSpec.Builder methodBuilder, MethodInfo methodInfo, String sql, List<CodeBlock> args, boolean useMapper) {
+    /** {@code mapperField}: the generated FastResultSetExtractor field to read rows with; null -> single column via queryForList. */
+    public static void buildJdbcQueryReturn(MethodSpec.Builder methodBuilder, MethodInfo methodInfo, String sql, List<CodeBlock> args, String mapperField) {
+        boolean useMapper = mapperField != null;
         TypeName returnType = TypeName.get(methodInfo.returnTypeMirror);
         TypeName elementTypeName;
         if (methodInfo.returns.list() && methodInfo.returnTypeMirror instanceof DeclaredType declaredType) {
@@ -231,9 +233,9 @@ public class JdbcCodeGenerator {
         CodeBlock queryArgs;
         if (useMapper) {
             if (args.isEmpty()) {
-                queryArgs = CodeBlock.of("$S, tableMapper", sql);
+                queryArgs = CodeBlock.of("$S, $N", sql, mapperField);
             } else {
-                queryArgs = CodeBlock.of("$S, tableMapper, $L", sql, CodeBlock.join(args, ", "));
+                queryArgs = CodeBlock.of("$S, $N, $L", sql, mapperField, CodeBlock.join(args, ", "));
             }
         } else {
             if (args.isEmpty()) {
