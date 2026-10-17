@@ -2,8 +2,6 @@ package com.wavjaby.jdbc.processor.emit;
 
 import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.processor.model.*;
-import com.wavjaby.jdbc.processor.util.JdbcCodeGenerator;
-import com.wavjaby.jdbc.processor.util.SqlGenerator;
 import com.wavjaby.jdbc.util.FastResultSetExtractor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -19,8 +17,8 @@ import javax.lang.model.util.Elements;
 import java.io.IOException;
 import java.util.*;
 
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.quoteColumn;
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.quoteTable;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.quoteColumn;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.quoteTable;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 /** Writes one table's repository implementation: a method per MethodInfo, chosen by its Operation. */

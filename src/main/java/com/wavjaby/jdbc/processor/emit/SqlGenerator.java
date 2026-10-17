@@ -1,4 +1,4 @@
-package com.wavjaby.jdbc.processor.util;
+package com.wavjaby.jdbc.processor.emit;
 
 import com.wavjaby.jdbc.annotation.JoinColumn;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
@@ -13,7 +13,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import java.util.*;
 
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.*;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.*;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class SqlGenerator {

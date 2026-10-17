@@ -4,7 +4,6 @@ import com.squareup.javapoet.*;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
 import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.processor.resolve.ResolvedTable;
-import com.wavjaby.jdbc.processor.util.SqlGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -21,8 +20,8 @@ import javax.lang.model.type.DeclaredType;
 import java.io.IOException;
 import java.util.*;
 
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.createEnumTypeSql;
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.enumTypeName;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.createEnumTypeSql;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.enumTypeName;
 import static javax.tools.Diagnostic.Kind.ERROR;
 
 /** Writes RepositoryInit: schemas, enum types, then tables before views, each after what its DDL names. */

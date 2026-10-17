@@ -1,4 +1,4 @@
-package com.wavjaby.jdbc.processor.util;
+package com.wavjaby.jdbc.processor.emit;
 
 
 import com.squareup.javapoet.*;
@@ -11,8 +11,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.enumBindCast;
-import static com.wavjaby.jdbc.processor.util.PostgresDialect.quoteColumn;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.enumBindCast;
+import static com.wavjaby.jdbc.processor.emit.PostgresDialect.quoteColumn;
 
 public class JdbcCodeGenerator {
 

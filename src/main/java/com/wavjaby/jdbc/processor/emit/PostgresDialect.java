@@ -1,4 +1,4 @@
-package com.wavjaby.jdbc.processor.util;
+package com.wavjaby.jdbc.processor.emit;
 
 import com.wavjaby.jdbc.annotation.Column;
 import com.wavjaby.jdbc.processor.model.ColumnInfo;
