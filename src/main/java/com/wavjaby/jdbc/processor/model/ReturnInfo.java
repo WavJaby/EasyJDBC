@@ -117,11 +117,9 @@ public record ReturnInfo(
             checkColumnReturnType(returnColumn, rowType, returnTypeMirror, method, types, console);
             return new ReturnInfo(returnColumn, false, list, getTypeName(rowType));
         } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
-            if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
-                return new ReturnInfo(returnColumn, false, false, "boolean");
-            }
-            if (primitiveReturnType.getKind() == TypeKind.INT) {
-                return new ReturnInfo(returnColumn, false, false, "int");
+            if (primitiveReturnType.getKind() == TypeKind.BOOLEAN || primitiveReturnType.getKind() == TypeKind.INT) {
+                checkColumnReturnType(returnColumn, returnTypeMirror, returnTypeMirror, method, types, console);
+                return new ReturnInfo(returnColumn, false, false, primitiveReturnType.getKind() == TypeKind.INT ? "int" : "boolean");
             }
         } else if (returnTypeMirror instanceof ArrayType arrayType) {
             if (!(arrayType.getComponentType() instanceof DeclaredType) && arrayType.getComponentType().getKind() != TypeKind.BYTE) {

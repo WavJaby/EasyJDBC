@@ -90,7 +90,7 @@ public class MethodInfo {
         this.operation = initOperation(console);
     }
 
-    // First match wins, in this order: column SQL, batch insert, delete, primitive return, void return, row return, projection, single column
+    // First match wins, in this order: column SQL, batch insert, delete, primitive return (a @Select field reads that column), void return, row return, projection, single column
     private Operation initOperation(Messager console) throws EmptyProcessingException {
         if (returns.column().columnSqlParams() != null)
             return Operation.SELECT_COLUMN;
@@ -109,10 +109,13 @@ public class MethodInfo {
 
         if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
             TypeKind kind = primitiveReturnType.getKind();
+            boolean selectsColumn = returns.column().column() != null;
             if (kind == TypeKind.BOOLEAN)
-                return modifyRow ? Operation.UPDATE_CHECKED : Operation.EXISTS;
+                return modifyRow ? Operation.UPDATE_CHECKED : selectsColumn ? Operation.SELECT_COLUMN : Operation.EXISTS;
             if (kind == TypeKind.INT && count)
                 return Operation.COUNT;
+            if (kind == TypeKind.INT && selectsColumn)
+                return Operation.SELECT_COLUMN;
             console.printMessage(ERROR, "Unrecognized return type for " + returns.typeName() + " method: " + method, method);
             throw new EmptyProcessingException();
         }

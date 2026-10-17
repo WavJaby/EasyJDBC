@@ -280,10 +280,13 @@ public class JdbcCodeGenerator {
         } else {
             methodBuilder.addStatement("$T<$T> result = $L($L)", List.class, elementTypeName, queryMethod, queryArgs);
 
+            // A primitive cannot be null: no row reads as its zero value, unless @NotFound asks for an exception (int keeps 0 regardless)
             if (methodInfo.returnTypeMirror instanceof PrimitiveType primitiveType &&
                     primitiveType.getKind() == TypeKind.INT) {
                 methodBuilder.addStatement("return result.isEmpty() ? 0 : result.get(0)");
-            } else if (methodInfo.returnTypeMirror instanceof PrimitiveType || methodInfo.notFound != null) {
+            } else if (methodInfo.returnTypeMirror instanceof PrimitiveType && methodInfo.notFound == null) {
+                methodBuilder.addStatement("return !result.isEmpty() && result.get(0)");
+            } else if (methodInfo.notFound != null) {
                 ClassName exceptionClass = methodInfo.notFound.exception() != null
                         ? ClassName.get(methodInfo.notFound.exception())
                         : ClassName.get(RuntimeException.class);
