@@ -3,28 +3,20 @@ package com.wavjaby.jdbc.processor.model;
 import com.wavjaby.jdbc.annotation.*;
 import com.wavjaby.jdbc.annotation.conf.Direction;
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
-import com.wavjaby.jdbc.processor.util.MethodParamParser;
 import org.jspecify.annotations.NonNull;
 
 import javax.annotation.processing.Messager;
 import javax.lang.model.element.*;
 import javax.lang.model.type.*;
 import javax.lang.model.util.Types;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.wavjaby.jdbc.processor.util.AnnotationHelper.*;
-import static com.wavjaby.jdbc.processor.util.MethodParamParser.getTypeName;
 import static javax.tools.Diagnostic.Kind.ERROR;
-import static javax.tools.Diagnostic.Kind.WARNING;
 
+/** One repository method: its annotations, parameters bound to columns, return shape, and the Operation they add up to. */
 public class MethodInfo {
-    private final static Pattern paramPattern = Pattern.compile(":([a-zA-Z_]\\w*)(\\.\\w+)*");
     private final TableData tableData;
     public final ExecutableElement method;
 
@@ -80,8 +72,8 @@ public class MethodInfo {
         Select select = method.getAnnotation(Select.class);
 
         // Parse custom SQL string
-        CustomSqlRaw customSql = parseCustomSql(select, querySQL, method, console);
-        this.querySql = customSql.query == null ? null : querySQL;
+        CustomSql customSql = CustomSql.parse(select, querySQL, method, console);
+        this.querySql = customSql.query() == null ? null : querySQL;
 
         // Get method parameters
         MethodParamParser parser = parseParamsToColumns(customSql, console);
@@ -89,11 +81,11 @@ public class MethodInfo {
         this.batchInsert = parser.batchInsert;
         this.insertMethod = parser.insertMethod;
 
-        this.querySqlParams = initSqlParams("querySql", customSql.query, params, method, console);
+        this.querySqlParams = CustomSql.initSqlParams("querySql", customSql.query(), params, method, console);
 
         this.notFound = initNotFoundException(method);
 
-        this.returns = initReturnInfo(select, customSql, returnTypeMirror, tableData, params, method, types, console);
+        this.returns = ReturnInfo.parse(select, customSql, returnTypeMirror, tableData, params, method, types, console);
 
         this.operation = initOperation(console);
     }
@@ -155,79 +147,8 @@ public class MethodInfo {
             return Operation.SELECT_PROJECTION;
         }
 
-        // initReturnInfo only lets any other shape through with a @Select field or column SQL, and column SQL matched first
+        // ReturnInfo.parse only lets any other shape through with a @Select field or column SQL, and column SQL matched first
         return Operation.SELECT_COLUMN;
-    }
-
-    public record CustomSqlRaw(List<SqlParam> column, List<SqlParam> query) {
-        public record SqlParam(String sql, String paramName) {
-        }
-
-        public boolean isParamExist(String paramName) {
-            if (query != null && query.stream().anyMatch(param -> paramName.equals(param.paramName)))
-                return true;
-            if (column != null && column.stream().anyMatch(param -> paramName.equals(param.paramName)))
-                return true;
-            return false;
-        }
-    }
-
-    private static CustomSqlRaw parseCustomSql(Select select, QuerySQL querySQL, ExecutableElement method, Messager console) throws EmptyProcessingException {
-        List<CustomSqlRaw.SqlParam> column = null, query = null;
-
-        if (select != null) {
-            if (select.columnSql().trim().isEmpty() && select.field().trim().isEmpty()) {
-                AnnotationMirror mirror = getAnnotationMirror(method, Select.class);
-                console.printMessage(WARNING, "Column select is empty", method, mirror);
-            } else if (!select.columnSql().trim().isEmpty()) {
-                column = parseSqlParam(select.columnSql());
-            }
-        }
-
-        if (querySQL != null) {
-            if (querySQL.value().trim().isEmpty()) {
-                AnnotationMirror mirror = getAnnotationMirror(method, QuerySQL.class);
-                assert mirror != null;
-                AnnotationValue value = getAnnotationValue(mirror, "value");
-                console.printMessage(WARNING, "Query SQL is empty", method, mirror, value);
-            }
-            query = parseSqlParam(querySQL.value());
-        }
-
-
-        return new CustomSqlRaw(column, query);
-    }
-
-    private static SqlParamInfo[] initSqlParams(String keyName, List<CustomSqlRaw.SqlParam> sqlParams, List<MethodParamInfo> methodParams, ExecutableElement method, Messager console) throws EmptyProcessingException {
-        if (sqlParams == null || sqlParams.isEmpty())
-            return null;
-
-        Map<String, MethodParamInfo> paramMap = new HashMap<>(sqlParams.size());
-        for (MethodParamInfo param : methodParams) {
-            if (param.customSqlParam) {
-                paramMap.put(param.paramName, param);
-            }
-        }
-
-        SqlParamInfo[] result = new SqlParamInfo[sqlParams.size()];
-        result[result.length - 1] = new SqlParamInfo(sqlParams.get(sqlParams.size() - 1).sql(), null, null);
-
-        boolean error = false;
-        for (int i = 0; i < sqlParams.size() - 1; i++) {
-            MethodParamInfo param = paramMap.get(sqlParams.get(i).paramName());
-            if (param == null) {
-                error = true;
-                printError(console, method, Select.class, keyName, "Parameter '" + sqlParams.get(i).paramName() + "' is not defined in method parameters");
-            } else if (param.isEnum && param.columns.size() > 1) {
-                error = true;
-                printError(console, method, Select.class, keyName, "Parameter '" + sqlParams.get(i).paramName() + "' have multiple columns, only one column is allowed in custom SQL");
-            }
-            result[i] = new SqlParamInfo(sqlParams.get(i).sql(), sqlParams.get(i).paramName(), param);
-        }
-        if (error)
-            throw new EmptyProcessingException();
-
-        return result;
     }
 
     public record NotFoundException(TypeElement exception, String args) {
@@ -278,191 +199,6 @@ public class MethodInfo {
         return result;
     }
 
-    public record ReturnColumn(ColumnInfo column, SqlParamInfo[] columnSqlParams) {
-        public boolean isNull() {
-            return column == null && columnSqlParams == null;
-        }
-    }
-
-    private static ReturnColumn initReturnColumn(Select select, List<CustomSqlRaw.SqlParam> column, TableData tableData, List<MethodParamInfo> params, ExecutableElement method, Messager console) throws EmptyProcessingException {
-        if (select == null)
-            return new ReturnColumn(null, null);
-
-        if (column == null && select.field().trim().isEmpty()) {
-            AnnotationMirror mirror = getAnnotationMirror(method, Select.class);
-            console.printMessage(WARNING, "Column select is empty", method, mirror);
-            return new ReturnColumn(null, null);
-        }
-
-        String returnField = select.field().trim().isEmpty() ? null : select.field().trim();
-
-        // Print error if both return field and sql are used
-        if (column != null && returnField != null) {
-            printError(console, method, Select.class, "field",
-                    "Return field and column SQL can not be used together");
-            throw new EmptyProcessingException();
-        }
-
-        if (column != null) {
-            SqlParamInfo[] returnColumnSqlParams = initSqlParams("columnSql", column, params, method, console);
-            return new ReturnColumn(null, returnColumnSqlParams);
-        } else if (returnField != null) {
-            ColumnInfo returnColumn = tableData.tableFields.get(returnField);
-            if (returnColumn == null) {
-                printError(console, method, Select.class, "field",
-                        "Return field '" + returnField + "' not exist in table " + tableData.tableInfo.classPath);
-                throw new EmptyProcessingException();
-            }
-            return new ReturnColumn(returnColumn, null);
-        } else
-            return new ReturnColumn(null, null);
-    }
-
-    /** A record returned instead of the table: one column per component, in component order. */
-    public record Projection(TypeElement type, List<ColumnInfo> columns) {
-    }
-
-    public record ReturnInfo(
-            @NonNull
-            ReturnColumn column,
-            boolean table,
-            boolean list,
-            String typeName,
-            Projection projection) {
-
-        ReturnInfo(ReturnColumn column, boolean table, boolean list, String typeName) {
-            this(column, table, list, typeName, null);
-        }
-    }
-
-    /**
-     * A declared return type is, per row (the List element when it is a List): the table class, a projection record, or a single-column type that names its column with @Select.
-     * A supertype of the table is refused: the generated List of the table class is not assignable to a List of the supertype.
-     */
-    private static ReturnInfo initReturnInfo(Select select, CustomSqlRaw customSql, TypeMirror returnTypeMirror, TableData tableData, List<MethodParamInfo> params, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
-        ReturnColumn returnColumn = initReturnColumn(select, customSql.column, tableData, params, method, console);
-
-        if (returnTypeMirror instanceof DeclaredType declaredReturnType) {
-            boolean list = declaredReturnType.asElement().toString().equals(List.class.getName());
-            TypeMirror rowType = list ? declaredReturnType.getTypeArguments().get(0) : returnTypeMirror;
-            TypeElement rowElement = rowType instanceof DeclaredType declaredRowType ? (TypeElement) declaredRowType.asElement() : null;
-
-            if (rowElement != null && rowElement.toString().equals(tableData.tableInfo.classPath)) {
-                if (!returnColumn.isNull()) {
-                    printError(console, method, Select.class, "Return with table class must not use @Select");
-                    throw new EmptyProcessingException();
-                }
-                return new ReturnInfo(returnColumn, true, list, tableData.tableInfo.className);
-            }
-
-            if (rowElement != null && checkInstanceof(tableData.tableInfo.tableClassEle, rowElement)) {
-                console.printMessage(ERROR, "Return type '" + rowType + "' is a supertype of table class '" + tableData.tableInfo.classPath +
-                        "': return the table class itself, or a projection record of the columns needed", method);
-                throw new EmptyProcessingException();
-            }
-
-            if (rowElement != null && rowElement.getKind() == ElementKind.RECORD && !rowElement.toString().startsWith("java.")) {
-                if (!returnColumn.isNull()) {
-                    printError(console, method, Select.class, "Projection record '" + rowElement + "' selects the columns its components name: remove @Select");
-                    throw new EmptyProcessingException();
-                }
-                Projection projection = initProjection(rowElement, tableData, method, types, console);
-                return new ReturnInfo(returnColumn, false, list, getTypeName(rowType), projection);
-            }
-
-            if (returnColumn.isNull()) {
-                console.printMessage(ERROR, "Return type '" + rowType + "' is a single column: name it with @Select(field = ...) or @Select(columnSql = ...); " +
-                        "to return rows, return the table class or a projection record", method);
-                throw new EmptyProcessingException();
-            }
-            checkColumnReturnType(returnColumn, rowType, returnTypeMirror, method, types, console);
-            return new ReturnInfo(returnColumn, false, list, getTypeName(rowType));
-        } else if (returnTypeMirror instanceof PrimitiveType primitiveReturnType) {
-            if (primitiveReturnType.getKind() == TypeKind.BOOLEAN) {
-                return new ReturnInfo(returnColumn, false, false, "boolean");
-            }
-            if (primitiveReturnType.getKind() == TypeKind.INT) {
-                return new ReturnInfo(returnColumn, false, false, "int");
-            }
-        } else if (returnTypeMirror instanceof ArrayType arrayType) {
-            if (!(arrayType.getComponentType() instanceof DeclaredType) && arrayType.getComponentType().getKind() != TypeKind.BYTE) {
-                console.printMessage(ERROR, "Primitive array is not supported: " + arrayType + ", use List or DeclaredType array instead.", method);
-                throw new EmptyProcessingException();
-            }
-
-            // Only allow when return field is used
-            if (!returnColumn.isNull()) {
-                checkColumnReturnType(returnColumn, returnTypeMirror, returnTypeMirror, method, types, console);
-                return new ReturnInfo(returnColumn, false, false, getTypeName(returnTypeMirror));
-            } else {
-                console.printMessage(ERROR, "Return with array type must use returnField, to query multiple objects, use List<>", method);
-                throw new EmptyProcessingException();
-            }
-        } else if (returnTypeMirror instanceof NoType) {
-            return new ReturnInfo(returnColumn, false, false, "void");
-        }
-
-        console.printMessage(ERROR, "Repository '" + tableData.tableInfo.repoIntPackagePath +
-                "' for table class '" + tableData.tableInfo.classPath +
-                "', method: '" + method.toString() + "' return type '" + returnTypeMirror + "' is not acceptable", method);
-        throw new EmptyProcessingException();
-    }
-
-    // Every component must be a table field of the same type; the row mapper fills constructor parameters by position, so SELECT follows component order
-    private static Projection initProjection(TypeElement record, TableData tableData, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
-        List<? extends RecordComponentElement> components = record.getRecordComponents();
-        List<ColumnInfo> columns = new ArrayList<>(components.size());
-        boolean error = false;
-        for (RecordComponentElement component : components) {
-            String name = component.getSimpleName().toString();
-            ColumnInfo column = tableData.tableFields.get(name);
-            if (column == null) {
-                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "' is not a field of table '" + tableData.tableInfo.classPath + "'", method);
-                error = true;
-                continue;
-            }
-            if (!types.isSameType(component.asType(), column.field.asType())) {
-                console.printMessage(ERROR, "Projection '" + record + "' component '" + name + "' is '" + component.asType() +
-                        "' but the field is '" + column.field.asType() + "' in table '" + tableData.tableInfo.classPath + "'", method);
-                error = true;
-                continue;
-            }
-            columns.add(column);
-        }
-
-        // FastRowMapper takes the first public constructor whose arity equals the field count, and getConstructors() has no defined order
-        long sameArity = record.getEnclosedElements().stream()
-                .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR && e.getModifiers().contains(Modifier.PUBLIC))
-                .filter(e -> ((ExecutableElement) e).getParameters().size() == components.size())
-                .count();
-        if (sameArity > 1) {
-            console.printMessage(ERROR, "Projection '" + record + "' has " + sameArity + " public constructors taking " + components.size() +
-                    " parameters; the row mapper would pick one arbitrarily -- keep only the canonical constructor at that arity", method);
-            error = true;
-        }
-
-        if (error)
-            throw new EmptyProcessingException();
-        return new Projection(record, columns);
-    }
-
-    // A @Select(field) column reads as the field's type. The List form is ambiguous on purpose: per row (List<String> of a String field) or the field itself (List<String> of a List<String> field)
-    private static void checkColumnReturnType(ReturnColumn returnColumn, TypeMirror rowType, TypeMirror returnType, ExecutableElement method, Types types, Messager console) throws EmptyProcessingException {
-        if (returnColumn.column() == null)
-            return; // columnSql: its type is whatever the SQL computes
-        TypeMirror fieldType = boxed(types, returnColumn.column().field.asType());
-        if (types.isSameType(boxed(types, rowType), fieldType) || types.isSameType(boxed(types, returnType), fieldType))
-            return;
-        AnnotationMirror mirror = getAnnotationMirror(method, Select.class);
-        console.printMessage(ERROR, "Return type '" + rowType + "' does not match field '" + returnColumn.column().field.getSimpleName() +
-                "' of type '" + returnColumn.column().field.asType() + "'", method, mirror, getAnnotationValue(mirror, "field"));
-        throw new EmptyProcessingException();
-    }
-
-    private static TypeMirror boxed(Types types, TypeMirror type) {
-        return type instanceof PrimitiveType primitive ? types.boxedClass(primitive).asType() : type;
-    }
-
     private static boolean initCount(TypeMirror returnTypeMirror, ExecutableElement method, Messager console) throws EmptyProcessingException {
         // Check @Count method return type
         boolean count = method.getAnnotation(Count.class) != null;
@@ -473,22 +209,7 @@ public class MethodInfo {
         return count;
     }
 
-    private static List<CustomSqlRaw.SqlParam> parseSqlParam(String sql) {
-        String returnColumnSql = sql.replaceAll(" *\r?\n *", " ");
-        Matcher matcher = paramPattern.matcher(returnColumnSql);
-        int index = 0;
-        List<CustomSqlRaw.SqlParam> result = new ArrayList<>();
-        while (matcher.find()) {
-            String pramName = matcher.group().substring(1);
-
-            result.add(new CustomSqlRaw.SqlParam(returnColumnSql.substring(index, matcher.start()), pramName));
-            index = matcher.end();
-        }
-        result.add(new CustomSqlRaw.SqlParam(returnColumnSql.substring(index), null));
-        return result;
-    }
-
-    private MethodParamParser parseParamsToColumns(MethodInfo.CustomSqlRaw customSql, Messager console) throws EmptyProcessingException {
+    private MethodParamParser parseParamsToColumns(CustomSql customSql, Messager console) throws EmptyProcessingException {
         List<? extends VariableElement> methodParams = method.getParameters();
 
         // Check if param is table class

@@ -66,12 +66,12 @@ public class RepositoryEmitter {
                 .build());
 
         // One extractor per projection record, shared by every method returning it
-        Map<String, MethodInfo.Projection> projections = new LinkedHashMap<>();
+        Map<String, ReturnInfo.Projection> projections = new LinkedHashMap<>();
         for (MethodInfo method : tableData.interfaceMethodInfo)
             if (method.returns.projection() != null)
                 projections.putIfAbsent(method.returns.projection().type().getQualifiedName().toString(), method.returns.projection());
         Map<String, String> projectionMappers = projectionMapperFields(projections.values(), tableData);
-        for (MethodInfo.Projection projection : projections.values()) {
+        for (ReturnInfo.Projection projection : projections.values()) {
             ClassName projectionClass = ClassName.get(projection.type());
             typeBuilder.addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(FastResultSetExtractor.class), projectionClass),
                             projectionMappers.get(projection.type().getQualifiedName().toString()))
@@ -94,7 +94,7 @@ public class RepositoryEmitter {
                 FastResultSetExtractor.class,
                 tableDataClass,
                 tableData.tableColumns.size());
-        for (MethodInfo.Projection projection : projections.values())
+        for (ReturnInfo.Projection projection : projections.values())
             constructorBuilder.addStatement("$N = new $T<>($T.class, $L)",
                     projectionMappers.get(projection.type().getQualifiedName().toString()),
                     FastResultSetExtractor.class,
@@ -120,12 +120,12 @@ public class RepositoryEmitter {
 
 
     // Projection qualified name -> extractor field name: simple name + "Mapper", suffixed when two projections or a dependency field would collide
-    private static Map<String, String> projectionMapperFields(Collection<MethodInfo.Projection> projections, TableData tableData) {
+    private static Map<String, String> projectionMapperFields(Collection<ReturnInfo.Projection> projections, TableData tableData) {
         Set<String> taken = new HashSet<>(tableData.getDependencies().values());
         taken.add("jdbc");
         taken.add(TABLE_MAPPER);
         Map<String, String> fields = new LinkedHashMap<>();
-        for (MethodInfo.Projection projection : projections) {
+        for (ReturnInfo.Projection projection : projections) {
             TypeElement type = projection.type();
             String qualifiedName = type.getQualifiedName().toString();
             String simpleName = type.getSimpleName().toString();
@@ -246,7 +246,7 @@ public class RepositoryEmitter {
 
         StringBuilder columnQuery = new StringBuilder();
         List<CodeBlock> columnArgs = new ArrayList<>();
-        MethodInfo.ReturnColumn returnColumn = methodInfo.returns.column();
+        ReturnInfo.ReturnColumn returnColumn = methodInfo.returns.column();
         if (returnColumn.columnSqlParams() != null) {
             for (SqlParamInfo param : returnColumn.columnSqlParams()) {
                 columnQuery.append(param.sqlPart());

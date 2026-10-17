@@ -1,2 +1,2 @@
 === diagnostics (1) ===
-ERROR -: EasyJDBC processor internal error, a processor bug rather than a problem in your code: java.lang.IndexOutOfBoundsException: Index: 0, Size: 0 in com.wavjaby.jdbc.processor.model.MethodInfo.initReturnInfo
+ERROR -: EasyJDBC processor internal error, a processor bug rather than a problem in your code: java.lang.IndexOutOfBoundsException: Index: 0, Size: 0 in com.wavjaby.jdbc.processor.model.ReturnInfo.parse

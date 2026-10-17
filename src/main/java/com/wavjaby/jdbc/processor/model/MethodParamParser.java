@@ -1,10 +1,6 @@
-package com.wavjaby.jdbc.processor.util;
+package com.wavjaby.jdbc.processor.model;
 
 import com.wavjaby.jdbc.processor.EmptyProcessingException;
-import com.wavjaby.jdbc.processor.model.ColumnInfo;
-import com.wavjaby.jdbc.processor.model.MethodInfo;
-import com.wavjaby.jdbc.processor.model.MethodParamInfo;
-import com.wavjaby.jdbc.processor.model.TableData;
 import com.wavjaby.jdbc.annotation.FieldName;
 import com.wavjaby.jdbc.annotation.UpdateData;
 import com.wavjaby.jdbc.annotation.Where;
@@ -23,14 +19,14 @@ import static javax.tools.Diagnostic.Kind.ERROR;
 
 public class MethodParamParser {
     private final TableData tableData;
-    private final MethodInfo.CustomSqlRaw customSql;
+    private final CustomSql customSql;
     private final Messager console;
 
     public final boolean batchInsert;
     public final boolean insertMethod;
     public final List<MethodParamInfo> params = new ArrayList<>();
 
-    public MethodParamParser(Element parameter, String parameterName, TableData tableData, MethodInfo.CustomSqlRaw customSql, Messager console) throws EmptyProcessingException {
+    public MethodParamParser(Element parameter, String parameterName, TableData tableData, CustomSql customSql, Messager console) throws EmptyProcessingException {
         this.tableData = tableData;
         this.customSql = customSql;
         this.console = console;
@@ -41,7 +37,7 @@ public class MethodParamParser {
             throw new EmptyProcessingException();
     }
 
-    public MethodParamParser(List<? extends VariableElement> methodParams, TableData tableData, MethodInfo.CustomSqlRaw customSql, boolean insertMethod, Messager console) throws EmptyProcessingException {
+    public MethodParamParser(List<? extends VariableElement> methodParams, TableData tableData, CustomSql customSql, boolean insertMethod, Messager console) throws EmptyProcessingException {
         this.tableData = tableData;
         this.customSql = customSql;
         this.console = console;
