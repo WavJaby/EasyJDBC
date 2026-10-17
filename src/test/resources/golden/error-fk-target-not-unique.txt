@@ -1,0 +1,98 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS category(
+            id BIGINT NOT NULL,
+            label VARCHAR,
+            CONSTRAINT category_PK PRIMARY KEY(id)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS product(
+            id BIGINT NOT NULL,
+            category_label VARCHAR NOT NULL,
+            CONSTRAINT product_PK PRIMARY KEY(id),
+            CONSTRAINT product_category_label_FK FOREIGN KEY (category_label) REFERENCES category(label)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/CategoryRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class CategoryRepositoryImpl implements CategoryRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Category> tableMapper;
+
+  public CategoryRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Category.class, 2);
+  }
+
+  @Override
+  public Category save(Category row) {
+    jdbc.update("INSERT INTO category (id,label)VALUES(?,?)", row.id(), row.label());
+    return new Category(row.id(), row.label());
+  }
+}
+
+=== generated: fx/ProductRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class ProductRepositoryImpl implements ProductRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Product> tableMapper;
+
+  public ProductRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Product.class, 2);
+  }
+
+  @Override
+  public Product save(Product row) {
+    jdbc.update("INSERT INTO product (id,category_label)VALUES(?,?)", row.id(), row.categoryLabel());
+    return new Product(row.id(), row.categoryLabel());
+  }
+}

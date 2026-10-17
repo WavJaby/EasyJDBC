@@ -1,0 +1,100 @@
+=== diagnostics (0) ===
+
+=== generated: com/wavjaby/jdbc/util/RepositoryInit.java ===
+package com.wavjaby.jdbc.util;
+
+import java.lang.Override;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RepositoryInit implements ApplicationListener<ApplicationReadyEvent> {
+  private static final Logger logger = LoggerFactory.getLogger(RepositoryInit.class);
+
+  private final JdbcTemplate jdbc;
+
+  public RepositoryInit(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  public void initSchemeAndTable() {
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS account(
+            id BIGINT NOT NULL,
+            code VARCHAR,
+            CONSTRAINT account_PK PRIMARY KEY(id),
+            CONSTRAINT account_code_UK UNIQUE (code)
+        );""");
+    jdbc.execute("""
+        CREATE TABLE IF NOT EXISTS trade(
+            id BIGINT NOT NULL,
+            buyer_id BIGINT NOT NULL,
+            seller_code VARCHAR NOT NULL,
+            CONSTRAINT trade_PK PRIMARY KEY(id),
+            CONSTRAINT trade_buyer_id__seller_code_FK FOREIGN KEY (buyer_id,seller_code) REFERENCES account(id,code)
+        );""");
+  }
+
+  @Override
+  public void onApplicationEvent(final ApplicationReadyEvent event) {
+    logger.debug("Start init scheme and table");
+    initSchemeAndTable();
+    logger.debug("Init scheme and table success");
+  }
+}
+
+=== generated: fx/AccountRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class AccountRepositoryImpl implements AccountRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Account> tableMapper;
+
+  public AccountRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Account.class, 2);
+  }
+
+  @Override
+  public Account save(Account row) {
+    jdbc.update("INSERT INTO account (id,code)VALUES(?,?)", row.id(), row.code());
+    return new Account(row.id(), row.code());
+  }
+}
+
+=== generated: fx/TradeRepositoryImpl.java ===
+package fx;
+
+import com.wavjaby.jdbc.util.FastResultSetExtractor;
+import java.lang.Override;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class TradeRepositoryImpl implements TradeRepository {
+  private final JdbcTemplate jdbc;
+
+  private final FastResultSetExtractor<Trade> tableMapper;
+
+  public TradeRepositoryImpl(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+    tableMapper = new FastResultSetExtractor<>(Trade.class, 3);
+  }
+
+  @Override
+  public Trade save(Trade row) {
+    jdbc.update("INSERT INTO trade (id,buyer_id,seller_code)VALUES(?,?,?)", row.id(), row.buyerId(), row.sellerCode());
+    return new Trade(row.id(), row.buyerId(), row.sellerCode());
+  }
+}
