@@ -15,6 +15,12 @@ public class Document extends AuditBase {
     @Column(length = 128)
     String tag;
 
-    public Document() {
+    // The row mapper fills this by position, in column order: superclass fields first, the shadowed tag where the superclass declared it
+    public Document(String createdBy, java.sql.Timestamp createdAt, String tag, long id, String title) {
+        this.createdBy = createdBy;
+        this.createdAt = createdAt;
+        this.tag = tag;
+        this.id = id;
+        this.title = title;
     }
 }

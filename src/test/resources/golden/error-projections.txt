@@ -1,5 +1,5 @@
 === diagnostics (4) ===
 ERROR PersonRepository.java: Projection 'fx.AgeText' component 'age' is 'java.lang.String' but the field is 'int' in table 'fx.Person'
 ERROR PersonRepository.java: Projection 'fx.Nickname' component 'nickname' is not a field of table 'fx.Person'
-ERROR PersonRepository.java: Projection 'fx.Swapped' has 2 public constructors taking 2 parameters; the row mapper would pick one arbitrarily -- keep only the canonical constructor at that arity
+ERROR PersonRepository.java: Projection 'fx.Swapped' has 2 public constructors taking 2 parameters; the row mapper would pick one arbitrarily -- keep only one at that arity
 ERROR PersonRepository.java: Projection return 'fx.IdOnly' is for queries only; update returns the table class, a count or nothing

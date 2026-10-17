@@ -9,6 +9,7 @@ import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import java.util.*;
 
@@ -31,7 +32,7 @@ public class TableData {
     }
 
     /** Stops at the first error: later checks read the maps the earlier fields filled. */
-    public void parseTableField(Messager console) throws EmptyProcessingException {
+    public void parseTableField(Types types, Messager console) throws EmptyProcessingException {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         extractClassFields(tableInfo.tableClassEle, fields);
 
@@ -101,6 +102,15 @@ public class TableData {
             uniqueKeyList.add(uniqueKey);
             index++;
         }
+
+        // Every row SELECT lists tableColumns in this order, so that is the order the constructor is filled in
+        List<String> columnNames = new ArrayList<>();
+        List<TypeMirror> columnTypes = new ArrayList<>();
+        for (ColumnInfo column : tableColumns.values()) {
+            columnNames.add(column.columnName);
+            columnTypes.add(column.field.asType());
+        }
+        RowConstructor.check(tableInfo.tableClassEle, columnNames, columnTypes, "Table '" + tableInfo.classPath + "'", tableInfo.tableClassEle, types, console);
     }
 
     /** Every method is parsed, so each bad one reports; throws after the last when any failed. */

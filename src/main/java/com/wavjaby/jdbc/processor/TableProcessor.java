@@ -121,7 +121,7 @@ public class TableProcessor extends AbstractProcessor {
         // Get table definition class name
         TableInfo tableInfo = new TableInfo(element, repoInterfaceClass, virtualBaseClass);
         TableData tableData = new TableData(tableInfo);
-        tableData.parseTableField(console);
+        tableData.parseTableField(typeUtils, console);
 
         // Virtual table check
         if (tableInfo.isVirtual) {

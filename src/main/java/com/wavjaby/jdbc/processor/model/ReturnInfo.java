@@ -187,14 +187,11 @@ public record ReturnInfo(
             columns.add(column);
         }
 
-        // FastRowMapper takes the first public constructor whose arity equals the field count, and getConstructors() has no defined order
-        long sameArity = record.getEnclosedElements().stream()
-                .filter(e -> e.getKind() == ElementKind.CONSTRUCTOR && e.getModifiers().contains(Modifier.PUBLIC))
-                .filter(e -> ((ExecutableElement) e).getParameters().size() == components.size())
-                .count();
-        if (sameArity > 1) {
-            console.printMessage(ERROR, "Projection '" + record + "' has " + sameArity + " public constructors taking " + components.size() +
-                    " parameters; the row mapper would pick one arbitrarily -- keep only the canonical constructor at that arity", method);
+        // The canonical constructor follows component order; what can still go wrong is a second constructor at its arity
+        try {
+            RowConstructor.check(record, components.stream().map(c -> c.getSimpleName().toString()).toList(),
+                    components.stream().map(Element::asType).toList(), "Projection '" + record + "'", method, types, console);
+        } catch (EmptyProcessingException e) {
             error = true;
         }
 
